@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import DB_PATH
 
@@ -91,6 +91,12 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_chart_pos_app_date ON chart_positions(app_id, region, date)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status)")
 
+    # Migration: add pre_register column
+    try:
+        c.execute("ALTER TABLE apps ADD COLUMN pre_register INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     conn.commit()
     conn.close()
 
@@ -102,8 +108,9 @@ def save_app(app_data: dict):
     conn.execute("""
         INSERT INTO apps (app_id, title, developer, developer_id, genre, genre_id,
                          icon_url, free, contains_ads, offers_iap, content_rating,
-                         first_seen_date, released_date, updated_date, status, last_crawled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+                         first_seen_date, released_date, updated_date, status, last_crawled,
+                         pre_register)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
         ON CONFLICT(app_id) DO UPDATE SET
             title=excluded.title, developer=excluded.developer,
             developer_id=excluded.developer_id, genre=excluded.genre,
@@ -111,7 +118,8 @@ def save_app(app_data: dict):
             free=excluded.free, contains_ads=excluded.contains_ads,
             offers_iap=excluded.offers_iap, content_rating=excluded.content_rating,
             updated_date=excluded.updated_date, status='active',
-            last_crawled=excluded.last_crawled, consecutive_errors=0
+            last_crawled=excluded.last_crawled, consecutive_errors=0,
+            pre_register=excluded.pre_register
     """, (
         app_data.get("app_id"),
         app_data.get("title"),
@@ -128,6 +136,7 @@ def save_app(app_data: dict):
         app_data.get("released_date"),
         app_data.get("updated_date"),
         today,
+        1 if app_data.get("pre_register") else 0,
     ))
     conn.commit()
     conn.close()
@@ -321,3 +330,60 @@ def get_new_apps_since(date_str: str):
     """, (date_str,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_emerging_hits(region: str, days: int = 30):
+    """Apps first seen within the last N days, joined with latest snapshot and chart position."""
+    conn = get_conn()
+    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = conn.execute("""
+        SELECT
+            a.app_id, a.title, a.developer, a.genre, a.first_seen_date,
+            a.free, a.pre_register,
+            s1.real_installs   AS installs,
+            s1.score           AS score,
+            CASE WHEN s2.real_installs IS NOT NULL
+                 THEN s1.real_installs - s2.real_installs
+                 ELSE NULL END AS daily_installs,
+            cp.position        AS chart_position
+        FROM apps a
+        LEFT JOIN snapshots s1
+            ON a.app_id = s1.app_id AND s1.region = ?
+            AND s1.date = (SELECT MAX(date) FROM snapshots WHERE app_id = a.app_id AND region = ?)
+        LEFT JOIN snapshots s2
+            ON a.app_id = s2.app_id AND s2.region = ?
+            AND s2.date = (SELECT MAX(date) FROM snapshots WHERE app_id = a.app_id AND region = ? AND date < s1.date)
+        LEFT JOIN (
+            SELECT app_id, MIN(position) AS position
+            FROM chart_positions
+            WHERE region = ?
+            GROUP BY app_id
+            HAVING date = (SELECT MAX(date) FROM chart_positions cp2 WHERE cp2.app_id = chart_positions.app_id AND cp2.region = ?)
+        ) cp ON a.app_id = cp.app_id
+        WHERE a.first_seen_date >= ? AND a.status = 'active'
+        ORDER BY s1.real_installs DESC NULLS LAST
+    """, (region, region, region, region, region, region, cutoff)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_pre_registrations():
+    """Get all active pre-registration apps."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT * FROM apps WHERE pre_register = 1 AND status = 'active'
+        ORDER BY first_seen_date DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_active_app_ids_sorted():
+    """Get active app_ids sorted with recent apps (newcomers) first."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT app_id FROM apps WHERE status = 'active'
+        ORDER BY first_seen_date DESC
+    """).fetchall()
+    conn.close()
+    return [r["app_id"] for r in rows]

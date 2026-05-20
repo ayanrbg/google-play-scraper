@@ -8,7 +8,7 @@ from datetime import datetime
 
 from config import REGIONS, REGION_LANG
 from database import (
-    init_db, get_active_app_ids, save_snapshot, increment_app_errors,
+    init_db, get_active_app_ids_sorted, save_snapshot, increment_app_errors,
     save_crawl_log,
 )
 from scraper_utils import fetch_app_details
@@ -20,7 +20,7 @@ def run():
     print(f"{'=' * 60}")
 
     init_db()
-    app_ids = get_active_app_ids()
+    app_ids = get_active_app_ids_sorted()
     print(f"Tracking {len(app_ids)} active apps across {len(REGIONS)} regions\n")
 
     for region in REGIONS:

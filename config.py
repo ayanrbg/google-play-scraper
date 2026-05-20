@@ -1,23 +1,18 @@
 """Configuration constants for Google Play Scraper."""
 
-REGIONS = ["us", "gb", "jp"]
+REGIONS = ["us", "jp", "kr", "gb", "de", "br", "in", "id", "ru", "tr", "mx", "tw"]
 
 REGION_LANG = {
-    "us": "en",
-    "gb": "en",
-    "de": "de",
-    "jp": "ja",
-    "kr": "ko",
-    "br": "pt",
+    "us": "en", "gb": "en", "de": "de", "jp": "ja", "kr": "ko",
+    "br": "pt", "in": "en", "id": "id", "ru": "ru", "tr": "tr", "mx": "es", "tw": "zh",
 }
 
 CATEGORIES = [
-    None,
-    "GAME",
-    "APPLICATION",
+    None, "GAME", "GAME_ACTION", "GAME_STRATEGY", "GAME_ROLE_PLAYING",
+    "GAME_CASUAL", "APPLICATION",
 ]
 
-CHART_TYPES = ["top_free"]
+CHART_TYPES = ["top_free", "top_grossing"]
 
 REQUEST_DELAY_SEC = 0.4
 MAX_RETRIES = 3
@@ -32,10 +27,8 @@ HEADERS = {
 }
 
 SEARCH_QUERIES = [
-    "new game 2026",
-    "new app 2026",
-    "best new android game",
-    "pre-register game",
+    "new game 2026", "new release game", "just launched game",
+    "new app 2026", "pre-register game",
 ]
 
 # Google Play rounding thresholds for install counts

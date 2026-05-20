@@ -124,6 +124,29 @@ def cross_validate_regions(region_snapshots: dict[str, dict]) -> list[str]:
     return warnings
 
 
+def calc_first_week_installs(snapshots: list[dict]) -> dict:
+    """Sum of install deltas over the first 7 snapshots.
+
+    Returns: {total_7d, avg_daily, peak_daily, days_tracked}
+    """
+    if len(snapshots) < 2:
+        return {"total_7d": 0, "avg_daily": 0, "peak_daily": 0, "days_tracked": len(snapshots)}
+
+    week = snapshots[:8]  # up to 8 snapshots = 7 deltas
+    dailies = []
+    for i in range(1, len(week)):
+        delta = week[i].get("real_installs", 0) - week[i - 1].get("real_installs", 0)
+        dailies.append(max(delta, 0))
+
+    total = sum(dailies)
+    return {
+        "total_7d": total,
+        "avg_daily": round(total / len(dailies)) if dailies else 0,
+        "peak_daily": max(dailies) if dailies else 0,
+        "days_tracked": len(dailies),
+    }
+
+
 def detect_rounding_artifacts(history: list[dict]) -> list[dict]:
     """Identify days where install jumps exactly match Google rounding thresholds."""
     artifacts = []

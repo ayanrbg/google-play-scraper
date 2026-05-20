@@ -3,106 +3,169 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 from database import (
     init_db, get_all_apps_with_latest, get_app_history, get_app_chart_history,
     get_app_details, get_crawl_logs, get_regions_with_data, get_total_apps_count,
-    get_new_apps_since,
+    get_new_apps_since, get_emerging_hits, get_pre_registrations,
 )
 from accuracy import estimate_daily_installs, cross_validate_regions, detect_rounding_artifacts
 from config import REGIONS
 
-st.set_page_config(page_title="GP Monitor", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Game Ideas Finder", page_icon="🎮", layout="wide")
 
 init_db()
 
 # --- Sidebar ---
+available_regions = get_regions_with_data() or ["us"]
+
 with st.sidebar:
     st.header("Filters")
-
-    available_regions = get_regions_with_data() or ["us"]
     selected_region = st.selectbox("Region", available_regions, index=0)
+
+# --- Tabs ---
+tab_emerging, tab_prereg, tab_all, tab_detail, tab_quality = st.tabs(
+    ["Emerging Hits", "Pre-Registrations", "All Apps", "App Detail", "Data Quality"]
+)
+
+# ==================== TAB 1: Emerging Hits ====================
+with tab_emerging:
+    st.title("Emerging Hits")
+
+    with st.sidebar:
+        period = st.selectbox("Period", [7, 14, 30], index=2, format_func=lambda x: f"{x} days")
+
+        emerging_data = get_emerging_hits(selected_region, days=period)
+        em_df = pd.DataFrame(emerging_data) if emerging_data else pd.DataFrame()
+
+        if not em_df.empty:
+            genres_em = ["All"] + sorted(em_df["genre"].dropna().unique().tolist())
+            selected_genre_em = st.selectbox("Genre", genres_em, key="em_genre")
+            if selected_genre_em != "All":
+                em_df = em_df[em_df["genre"] == selected_genre_em]
+
+            free_filter_em = st.radio("Pricing", ["All", "Free", "Paid"], horizontal=True, key="em_free")
+            if free_filter_em == "Free":
+                em_df = em_df[em_df["free"] == 1]
+            elif free_filter_em == "Paid":
+                em_df = em_df[em_df["free"] == 0]
+
+    if em_df.empty:
+        st.warning("No new apps found for this period. Run `python discovery.py` to find apps.")
+    else:
+        # Metrics row
+        new_count = len(em_df)
+        top_app = em_df.iloc[0]
+        top_name = top_app.get("title", "N/A")
+        avg_installs = int(em_df["installs"].fillna(0).mean())
+        prereg_count = int(em_df["pre_register"].fillna(0).sum())
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("New Apps", new_count)
+        col2.metric("Top Installs", top_name[:25])
+        col3.metric("Avg Installs", f"{avg_installs:,}")
+        col4.metric("Pre-Regs Found", prereg_count)
+
+        # Add "Days Ago" column
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        em_df["days_ago"] = em_df["first_seen_date"].apply(
+            lambda x: (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(x, "%Y-%m-%d")).days
+            if pd.notna(x) else None
+        )
+
+        display_cols = {
+            "title": "App",
+            "developer": "Developer",
+            "genre": "Genre",
+            "installs": "Installs",
+            "daily_installs": "Daily Installs",
+            "score": "Rating",
+            "chart_position": "Chart Pos",
+            "first_seen_date": "First Seen",
+            "days_ago": "Days Ago",
+        }
+        available_cols = [c for c in display_cols if c in em_df.columns]
+        display_df = em_df[available_cols].rename(columns=display_cols)
+
+        for col in ["Installs", "Daily Installs"]:
+            if col in display_df.columns:
+                display_df[col] = display_df[col].fillna(0).astype(int)
+        if "Rating" in display_df.columns:
+            display_df["Rating"] = display_df["Rating"].apply(
+                lambda x: f"{x:.1f}" if pd.notna(x) else "-"
+            )
+        if "Chart Pos" in display_df.columns:
+            display_df["Chart Pos"] = display_df["Chart Pos"].apply(
+                lambda x: f"#{int(x)}" if pd.notna(x) else "-"
+            )
+
+        st.dataframe(display_df, use_container_width=True, height=600)
+
+# ==================== TAB 2: Pre-Registrations ====================
+with tab_prereg:
+    st.title("Pre-Registrations")
+
+    prereg_apps = get_pre_registrations()
+    if not prereg_apps:
+        st.info("No pre-registration apps found yet.")
+    else:
+        pr_df = pd.DataFrame(prereg_apps)
+        display_cols = {
+            "title": "App",
+            "developer": "Developer",
+            "genre": "Genre",
+            "first_seen_date": "First Seen",
+        }
+        available_cols = [c for c in display_cols if c in pr_df.columns]
+        st.dataframe(
+            pr_df[available_cols].rename(columns=display_cols),
+            use_container_width=True, height=500,
+        )
+
+# ==================== TAB 3: All Apps ====================
+with tab_all:
+    st.subheader(f"All Apps — {selected_region.upper()}")
 
     data = get_all_apps_with_latest(selected_region)
     if data:
         df = pd.DataFrame(data)
-        genres = ["All"] + sorted(df["genre"].dropna().unique().tolist())
-        selected_genre = st.selectbox("Genre", genres)
-        if selected_genre != "All":
-            df = df[df["genre"] == selected_genre]
 
-        free_filter = st.radio("Pricing", ["All", "Free", "Paid"], horizontal=True)
-        if free_filter == "Free":
-            df = df[df["free"] == 1]
-        elif free_filter == "Paid":
-            df = df[df["free"] == 0]
+        with st.sidebar:
+            st.markdown("---")
+            st.subheader("All Apps Filters")
+            genres = ["All"] + sorted(df["genre"].dropna().unique().tolist())
+            selected_genre = st.selectbox("Genre", genres, key="all_genre")
+            if selected_genre != "All":
+                df = df[df["genre"] == selected_genre]
 
-        min_installs = st.number_input("Min installs", min_value=0, value=0, step=1000)
-        if min_installs > 0:
-            df = df[df["installs_today"].fillna(0) >= min_installs]
+            free_filter = st.radio("Pricing", ["All", "Free", "Paid"], horizontal=True, key="all_free")
+            if free_filter == "Free":
+                df = df[df["free"] == 1]
+            elif free_filter == "Paid":
+                df = df[df["free"] == 0]
 
-        status_filter = st.radio("Status", ["All", "Active", "Removed"], horizontal=True)
-        if status_filter != "All":
-            df = df[df["status"] == status_filter.lower()]
+            min_installs = st.number_input("Min installs", min_value=0, value=0, step=1000)
+            if min_installs > 0:
+                df = df[df["installs_today"].fillna(0) >= min_installs]
 
-        sort_options = {
-            "Daily Installs": "daily_installs",
-            "Total Installs": "installs_today",
-            "Rating": "score_today",
-            "Ratings Count": "ratings_today",
-            "First Seen": "first_seen_date",
-            "Chart Position": "latest_chart_position",
-        }
-        sort_by = st.selectbox("Sort by", list(sort_options.keys()))
-        ascending = sort_by == "Chart Position"
-        df = df.sort_values(sort_options[sort_by], ascending=ascending, na_position="last")
+            status_filter = st.radio("Status", ["All", "Active", "Removed"], horizontal=True, key="all_status")
+            if status_filter != "All":
+                df = df[df["status"] == status_filter.lower()]
+
+            sort_options = {
+                "Daily Installs": "daily_installs",
+                "Total Installs": "installs_today",
+                "Rating": "score_today",
+                "Ratings Count": "ratings_today",
+                "First Seen": "first_seen_date",
+                "Chart Position": "latest_chart_position",
+            }
+            sort_by = st.selectbox("Sort by", list(sort_options.keys()))
+            ascending = sort_by == "Chart Position"
+            df = df.sort_values(sort_options[sort_by], ascending=ascending, na_position="last")
     else:
         df = pd.DataFrame()
-
-# --- Tabs ---
-tab_overview, tab_table, tab_detail, tab_quality = st.tabs(
-    ["Overview", "App Table", "App Detail", "Data Quality"]
-)
-
-# ==================== TAB 1: Overview ====================
-with tab_overview:
-    st.title("Google Play Monitor")
-
-    if df.empty:
-        st.warning("No data yet. Run `python discovery.py` first.")
-        st.stop()
-
-    counts = get_total_apps_count()
-    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    new_this_week = len(get_new_apps_since(week_ago))
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Apps", counts.get("active", 0))
-    col2.metric("New This Week", new_this_week)
-    col3.metric("Removed", counts.get("removed", 0))
-    total_daily = int(df["daily_installs"].fillna(0).sum())
-    col4.metric("Sum Daily Installs", f"{total_daily:,}")
-
-    st.subheader(f"Top Growers ({selected_region.upper()})")
-    top_growers = df[df["daily_installs"].fillna(0) > 0].head(10)
-    if not top_growers.empty:
-        fig = px.bar(
-            top_growers,
-            x="title",
-            y="daily_installs",
-            color="genre",
-            title="Top 10 by Daily Installs",
-        )
-        fig.update_layout(xaxis_tickangle=-45, height=400)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No daily install data yet (need 2+ days of snapshots).")
-
-# ==================== TAB 2: App Table ====================
-with tab_table:
-    st.subheader(f"Apps ({len(df)} shown) — {selected_region.upper()}")
 
     if df.empty:
         st.info("No apps match the current filters.")
@@ -137,14 +200,17 @@ with tab_table:
 
         st.dataframe(display_df, use_container_width=True, height=600)
 
-# ==================== TAB 3: App Detail ====================
+# ==================== TAB 4: App Detail ====================
 with tab_detail:
     st.subheader("App Detail")
 
-    if df.empty:
+    detail_data = get_all_apps_with_latest(selected_region)
+    detail_df = pd.DataFrame(detail_data) if detail_data else pd.DataFrame()
+
+    if detail_df.empty:
         st.info("No apps available.")
     else:
-        app_options = {row["title"]: row["app_id"] for _, row in df.iterrows() if row.get("title")}
+        app_options = {row["title"]: row["app_id"] for _, row in detail_df.iterrows() if row.get("title")}
         if not app_options:
             st.info("No apps with titles found.")
         else:
@@ -249,7 +315,7 @@ with tab_detail:
                         for w in warnings:
                             st.warning(w)
 
-# ==================== TAB 4: Data Quality ====================
+# ==================== TAB 5: Data Quality ====================
 with tab_quality:
     st.subheader("Data Quality & Crawl Log")
 
