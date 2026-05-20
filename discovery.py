@@ -64,9 +64,8 @@ def enrich_and_save(app_ids: set, region: str, chart_data: list) -> tuple[int, i
     existing = set(get_active_app_ids())
     new_ids = app_ids - existing
 
-    # Also refresh some existing apps that are in charts
-    chart_ids_existing = app_ids & existing
-    to_process = list(new_ids) + list(chart_ids_existing)
+    # Only fetch details for NEW apps (existing ones are updated by tracker.py)
+    to_process = list(new_ids)
 
     if len(to_process) > MAX_TRACKED_APPS:
         to_process = to_process[:MAX_TRACKED_APPS]

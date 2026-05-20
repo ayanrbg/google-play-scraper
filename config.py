@@ -1,6 +1,6 @@
 """Configuration constants for Google Play Scraper."""
 
-REGIONS = ["us", "gb", "de", "jp", "kr", "br"]
+REGIONS = ["us", "gb", "jp"]
 
 REGION_LANG = {
     "us": "en",
@@ -14,19 +14,12 @@ REGION_LANG = {
 CATEGORIES = [
     None,
     "GAME",
-    "GAME_ACTION",
-    "GAME_STRATEGY",
-    "GAME_ROLE_PLAYING",
-    "GAME_CASUAL",
     "APPLICATION",
-    "TOOLS",
-    "SOCIAL",
-    "COMMUNICATION",
 ]
 
-CHART_TYPES = ["top_free", "top_grossing"]
+CHART_TYPES = ["top_free"]
 
-REQUEST_DELAY_SEC = 0.6
+REQUEST_DELAY_SEC = 0.4
 MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 2.0
 
