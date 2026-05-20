@@ -224,8 +224,12 @@ def get_all_apps_with_latest(region: str = "us"):
             s1.date            AS snapshot_date,
             s1.price           AS price_today,
             s1.currency        AS currency_today,
-            (s1.real_installs - COALESCE(s2.real_installs, 0)) AS daily_installs,
-            (s1.ratings_count - COALESCE(s2.ratings_count, 0)) AS daily_ratings,
+            CASE WHEN s2.real_installs IS NOT NULL
+                 THEN s1.real_installs - s2.real_installs
+                 ELSE NULL END AS daily_installs,
+            CASE WHEN s2.ratings_count IS NOT NULL
+                 THEN s1.ratings_count - s2.ratings_count
+                 ELSE NULL END AS daily_ratings,
             cp.chart_type      AS latest_chart_type,
             cp.category        AS latest_chart_category,
             cp.position        AS latest_chart_position
@@ -236,9 +240,13 @@ def get_all_apps_with_latest(region: str = "us"):
         LEFT JOIN snapshots s2
             ON a.app_id = s2.app_id AND s2.region = ?
             AND s2.date = (SELECT MAX(date) FROM snapshots WHERE app_id = a.app_id AND region = ? AND date < s1.date)
-        LEFT JOIN chart_positions cp
-            ON a.app_id = cp.app_id AND cp.region = ?
-            AND cp.date = (SELECT MAX(date) FROM chart_positions WHERE app_id = a.app_id AND region = ?)
+        LEFT JOIN (
+            SELECT app_id, region, chart_type, category, MIN(position) AS position
+            FROM chart_positions
+            WHERE region = ?
+            GROUP BY app_id, region
+            HAVING date = (SELECT MAX(date) FROM chart_positions cp2 WHERE cp2.app_id = chart_positions.app_id AND cp2.region = ?)
+        ) cp ON a.app_id = cp.app_id
         ORDER BY daily_installs DESC NULLS LAST
     """, (region, region, region, region, region, region)).fetchall()
     conn.close()
