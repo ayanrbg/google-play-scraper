@@ -74,8 +74,11 @@ with tab_emerging:
             if pd.notna(x) else None
         )
 
+        em_df["store_url"] = "https://play.google.com/store/apps/details?id=" + em_df["app_id"]
+
         display_cols = {
             "title": "App",
+            "store_url": "Store",
             "developer": "Developer",
             "genre": "Genre",
             "installs": "Installs",
@@ -100,7 +103,10 @@ with tab_emerging:
                 lambda x: f"#{int(x)}" if pd.notna(x) else "-"
             )
 
-        st.dataframe(display_df, use_container_width=True, height=600)
+        st.dataframe(
+            display_df, use_container_width=True, height=600,
+            column_config={"Store": st.column_config.LinkColumn(display_text="Open")},
+        )
 
 # ==================== TAB 2: Pre-Registrations ====================
 with tab_prereg:
@@ -111,8 +117,10 @@ with tab_prereg:
         st.info("No pre-registration apps found yet.")
     else:
         pr_df = pd.DataFrame(prereg_apps)
+        pr_df["store_url"] = "https://play.google.com/store/apps/details?id=" + pr_df["app_id"]
         display_cols = {
             "title": "App",
+            "store_url": "Store",
             "developer": "Developer",
             "genre": "Genre",
             "first_seen_date": "First Seen",
@@ -121,6 +129,7 @@ with tab_prereg:
         st.dataframe(
             pr_df[available_cols].rename(columns=display_cols),
             use_container_width=True, height=500,
+            column_config={"Store": st.column_config.LinkColumn(display_text="Open")},
         )
 
 # ==================== TAB 3: All Apps ====================
@@ -170,8 +179,10 @@ with tab_all:
     if df.empty:
         st.info("No apps match the current filters.")
     else:
+        df["store_url"] = "https://play.google.com/store/apps/details?id=" + df["app_id"]
         display_cols = {
             "title": "App",
+            "store_url": "Store",
             "developer": "Developer",
             "genre": "Genre",
             "installs_today": "Installs",
@@ -198,7 +209,10 @@ with tab_all:
                 lambda x: f"#{int(x)}" if pd.notna(x) else "-"
             )
 
-        st.dataframe(display_df, use_container_width=True, height=600)
+        st.dataframe(
+            display_df, use_container_width=True, height=600,
+            column_config={"Store": st.column_config.LinkColumn(display_text="Open")},
+        )
 
 # ==================== TAB 4: App Detail ====================
 with tab_detail:
