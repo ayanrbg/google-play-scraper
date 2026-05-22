@@ -84,6 +84,53 @@ def normalize_app_data(data: dict) -> dict:
     }
 
 
+def check_prereg_html(app_id: str, lang: str = "en", country: str = "us") -> bool:
+    """Check if an app is in pre-registration by parsing its Google Play HTML.
+
+    Pre-reg apps lack the ["Install"] button in the ds:5 data block
+    and have a pre-registration count like [null,null,N] instead of install stats.
+    """
+    gl = country.upper()
+    url = f"https://play.google.com/store/apps/details?id={app_id}&hl={lang}&gl={gl}"
+    try:
+        _rate_limit()
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return False
+        ds5 = re.search(
+            r"AF_initDataCallback\(\{key:\s*'ds:5'.*?data:(.*?)\}\);",
+            resp.text, re.DOTALL,
+        )
+        if not ds5:
+            return False
+        data = ds5.group(1)
+        has_install_btn = bool(re.search(r'\["Install"\]', data))
+        has_installs = bool(re.search(r'\["\d[\d,]*\+?",[1-9]', data))
+        if not has_install_btn and not has_installs:
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def fetch_prereg_collection_ids(country: str = "us") -> list[str]:
+    """Fetch app IDs from Google Play's official pre-registration collection."""
+    gl = country.upper()
+    url = (
+        "https://play.google.com/store/apps/collection/"
+        f"promotion_3000000d51_pre_registration_games?hl=en&gl={gl}"
+    )
+    try:
+        _rate_limit()
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return []
+        pattern = r'/store/apps/details\?id=([\w\.]+)'
+        return list(dict.fromkeys(re.findall(pattern, resp.text)))
+    except Exception:
+        return []
+
+
 def fetch_app_details(app_id: str, lang: str = "en", country: str = "us") -> dict | None:
     """Fetch and validate app details. Returns normalized dict or None."""
     try:
@@ -100,6 +147,39 @@ def search_apps(query: str, lang: str = "en", country: str = "us", n_hits: int =
     try:
         results = _retry(gps_search, query, lang=lang, country=country, n_hits=n_hits)
         return [normalize_app_data(r) for r in results if _validate_app_data(r)]
+    except Exception:
+        return []
+
+
+def fetch_developer_app_ids(developer_id: str, country: str = "us") -> list[str]:
+    """Fetch all app IDs from a developer's Google Play page."""
+    gl = country.upper()
+    url = f"https://play.google.com/store/apps/dev?id={developer_id}&hl=en&gl={gl}"
+    try:
+        _rate_limit()
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return []
+        pattern = r'/store/apps/details\?id=([\w\.]+)'
+        app_ids = list(dict.fromkeys(re.findall(pattern, resp.text)))
+        return app_ids
+    except Exception:
+        return []
+
+
+def fetch_similar_app_ids(app_id: str, lang: str = "en", country: str = "us") -> list[str]:
+    """Fetch similar app IDs from a Google Play app page."""
+    gl = country.upper()
+    url = f"https://play.google.com/store/apps/details?id={app_id}&hl={lang}&gl={gl}"
+    try:
+        _rate_limit()
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return []
+        pattern = r'/store/apps/details\?id=([\w\.]+)'
+        all_ids = list(dict.fromkeys(re.findall(pattern, resp.text)))
+        # Remove the app itself from similar list
+        return [aid for aid in all_ids if aid != app_id]
     except Exception:
         return []
 
