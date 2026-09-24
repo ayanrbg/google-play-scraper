@@ -41,8 +41,6 @@ services:
     env_file: .env
     environment:
       GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
-      GPI_COOKIE_SECURE: "true"
-      GPI_PUBLIC_URL: https://${DOMAIN}
     depends_on:
       migrate:
         condition: service_completed_successfully
