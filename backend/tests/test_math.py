@@ -116,3 +116,13 @@ def test_prereg_detection():
     d = normalize_details({"appId": "y", "title": "Y", "genreId": "TOOLS", "released": "Apr 24, 2026",
                            "installs": "10,000+", "realInstalls": 12000})
     assert d["pre_register"] is False and d["is_game"] is False and d["released"] == date(2026, 4, 24)
+
+
+def test_throttling_is_counted_and_logged(caplog):
+    from gpi.play.http import RateLimiter
+    rl = RateLimiter(100)
+    with caplog.at_level("WARNING", logger="gpi"):
+        rl.back_off(0.01)
+        rl.back_off(0.01)
+    assert rl.throttled == 2
+    assert sum("ограничивает" in r.message for r in caplog.records) == 1  # throttled to one line a minute

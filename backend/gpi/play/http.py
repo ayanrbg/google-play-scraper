@@ -4,6 +4,7 @@ Google throttles by IP. Every call to Google Play (ours or google-play-scraper's
 goes through `throttle()` so the whole process stays under the configured pace.
 """
 
+import logging
 import random
 import threading
 import time
@@ -24,6 +25,8 @@ class RateLimiter:
         self.lock = threading.Lock()
         self.next_at = 0.0
         self.penalty_until = 0.0
+        self.throttled = 0
+        self.last_warned = 0.0
 
     def wait(self):
         with self.lock:
@@ -34,12 +37,20 @@ class RateLimiter:
         if delay > 0:
             time.sleep(delay)
 
-    def back_off(self, seconds: float):
+    def back_off(self, seconds: float, status: str = "429"):
         """Called on 429/503: pause everyone, not just the failing thread."""
         with self.lock:
             self.penalty_until = max(self.penalty_until, time.monotonic() + seconds)
+            self.throttled += 1
+            now = time.monotonic()
+            # One journal line per minute is enough to see that Google is pushing back.
+            if now - self.last_warned > 60:
+                self.last_warned = now
+                log.warning("Google ограничивает запросы (HTTP %s), пауза %d с; всего ограничений за прогон: %d",
+                            status, seconds, self.throttled)
 
 
+log = logging.getLogger("gpi")
 _limiter: RateLimiter | None = None
 _local = threading.local()
 
@@ -85,7 +96,7 @@ def request(method: str, url: str, retries: int = 4, **kwargs) -> requests.Respo
         if resp.status_code == 404:
             raise NotFound(url)
         if resp.status_code in (429, 503):
-            limiter().back_off(30 * (attempt + 1))
+            limiter().back_off(30 * (attempt + 1), str(resp.status_code))
             last = RuntimeError(f"HTTP {resp.status_code}")
             continue
         if resp.status_code >= 500:
