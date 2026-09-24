@@ -105,8 +105,8 @@ def daily():
         s.add(run)
         s.flush()
         run_id = run.id
-    from gpi.play.http import limiter
-    limiter().throttled = 0
+    from gpi.play.http import reset_throttle_count, throttle_count
+    reset_throttle_count()
     log.info("суточный прогон начат")
     for step in steps:
         step.update(status="running", started=datetime.utcnow().isoformat())
@@ -118,7 +118,7 @@ def daily():
             step.update(status="error", error=f"{type(e).__name__}: {e}"[:500])
         step["finished"] = datetime.utcnow().isoformat()
     failed = [s["step"] for s in steps if s["status"] == "error"]
-    throttled = limiter().throttled
+    throttled = throttle_count()
     if throttled:
         log.warning("за прогон Google ограничивал запросы %d раз: если это повторяется каждый день, "
                     "пора подключать прокси или снизить GPI_REQUESTS_PER_SECOND", throttled)

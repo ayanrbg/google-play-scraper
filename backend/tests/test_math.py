@@ -119,10 +119,34 @@ def test_prereg_detection():
 
 
 def test_throttling_is_counted_and_logged(caplog):
-    from gpi.play.http import RateLimiter
-    rl = RateLimiter(100)
+    from gpi.play import http
+    route = http.Route(name="сервер", limiter=http.RateLimiter(100))
+    http.reset_throttle_count()
     with caplog.at_level("WARNING", logger="gpi"):
-        rl.back_off(0.01)
-        rl.back_off(0.01)
-    assert rl.throttled == 2
-    assert sum("ограничивает" in r.message for r in caplog.records) == 1  # throttled to one line a minute
+        http._last_warned = 0.0
+        http.note_throttled(route, "429", 30)
+        http.note_throttled(route, "429", 30)
+    assert http.throttle_count() == 2
+    assert sum("ограничивает" in r.message for r in caplog.records) == 1  # one journal line a minute
+
+
+def test_proxy_routes(caplog):
+    from gpi.play import http
+    assert http.parse_proxy("1.2.3.4:8080:user:pw") == "http://user:pw@1.2.3.4:8080"
+    assert http.parse_proxy("http://u:p@h:1") == "http://u:p@h:1"
+    rs = http.build_routes(2.0, ["1.2.3.4:8080:u:p", "5.6.7.8:9090:u:p", "garbage"], 0.7)
+    assert [r.name for r in rs] == ["сервер", "1.2.3.4", "5.6.7.8"]
+    assert "u:p@" not in rs[1].name  # credentials never end up in names/logs
+    http._routes = rs
+    try:
+        assert http.pick(heavy=True) is rs[0]          # charts always go direct
+        with caplog.at_level("WARNING", logger="gpi"):
+            for _ in range(http.BENCH_AFTER_FAILS):
+                rs[1].failed("ProxyError")
+        assert rs[1].bench_until > 0 and "1.2.3.4" in caplog.text
+        for _ in range(5):                              # benched proxy is skipped
+            assert http.pick() is not rs[1]
+        rs[0].failed("x"); rs[0].failed("x"); rs[0].failed("x")
+        assert rs[0].bench_until == 0                   # the server itself is never benched
+    finally:
+        http._routes = None

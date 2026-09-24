@@ -20,7 +20,7 @@ from google_play_scraper.constants.request import Formats
 from google_play_scraper.exceptions import NotFoundError
 from google_play_scraper.features.app import parse_dom as gps_parse_dom
 
-from gpi.play.http import NotFound, limiter, request, throttle
+from gpi.play.http import NotFound, note_throttled, request, routes, throttle
 
 BASE = "https://play.google.com"
 _LIST_BODY = (Path(__file__).parent / "_list_body.txt").read_text(encoding="utf-8").strip()
@@ -36,7 +36,8 @@ def charts(collection: str, category: str, country: str, num: int = 200) -> list
     url = (f"{BASE}/_/PlayStoreUi/data/batchexecute?rpcids=vyAe2&source-path=%2Fstore%2Fapps"
            "&f.sid=-4178618388443751758&bl=boq_playuiserver_20220612.08_p0&authuser=0"
            f"&soc-app=121&soc-platform=1&soc-device=1&_reqid=82003&rt=c&hl=en&gl={country}")
-    resp = request("POST", url, data=body,
+    # heavy: ~1.2 MB uncompressed, always sent from the server's own IP to spare proxy traffic
+    resp = request("POST", url, data=body, heavy=True,
                    headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"})
     return parse_charts(resp.text)
 
@@ -102,7 +103,9 @@ def _call_gps(fn, *args, **kwargs):
             last = e
             msg = str(e)
             if "429" in msg or "503" in msg:
-                limiter().back_off(30 * (attempt + 1))
+                direct = routes()[0]
+                direct.limiter.back_off(30 * (attempt + 1))
+                note_throttled(direct, "429", 30 * (attempt + 1))
             else:
                 time.sleep(2 ** attempt)
     raise last

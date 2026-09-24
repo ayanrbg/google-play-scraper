@@ -25,7 +25,11 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
 
     # Scraping pace. Google throttles by IP, so keep this polite.
-    requests_per_second: float = 2.0
+    requests_per_second: float = 2.0   # from the server's own IP
+    # Optional proxies for light requests, comma/newline separated:
+    # http://user:pass@host:port  or Webshare-style host:port:user:pass
+    proxies: str = ""
+    proxy_rps: float = 0.7             # per proxy; keep low for shared proxies
     workers: int = 4
     http_timeout: float = 20.0
 
