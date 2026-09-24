@@ -26,6 +26,11 @@ const STEP_LABELS: Record<string, string> = {
   keywords: "Ниши в поиске",
   cleanup: "Очистка старых данных",
 };
+// Second pass of a step within one run (enrich/metrics run again after keyword search)
+const REPEAT_LABELS: Record<string, string> = {
+  enrich: "Карточки игр, найденных в поиске",
+  metrics: "Итоговый скоринг",
+};
 const PROGRESS_LABELS: Record<string, string> = {
   charts: "запросов чартов", enrich: "карточек", track: "игр", similar: "игр-образцов", developers: "страниц студий",
   suggest: "сидов", search: "запросов", "keyword-cards": "карточек из поиска",
@@ -101,13 +106,18 @@ function ProgressBar({ p, remaining }: { p: Progress | null; remaining?: number 
 }
 
 function StepList({ steps, current }: { steps: Step[]; current: StatusData["current"] }) {
+  const label = (i: number) => {
+    const name = steps[i].step;
+    const repeat = steps.slice(0, i).some((p) => p.step === name);
+    return (repeat && REPEAT_LABELS[name]) || STEP_LABELS[name] || name;
+  };
   return (
     <div className="stack" style={{ gap: 0 }}>
       {steps.map((s, i) => (
         <div key={i} style={{ padding: "10px 0", borderTop: i ? "1px solid var(--line)" : 0 }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
             <span>
-              <StepIcon status={s.status} /> <b>{STEP_LABELS[s.step] || s.step}</b>
+              <StepIcon status={s.status} /> <b>{label(i)}</b>
             </span>
             <span className="mono muted" style={{ fontSize: 12 }}>
               {s.status === "pending" ? "ждёт" : span(s.started, s.finished)}
