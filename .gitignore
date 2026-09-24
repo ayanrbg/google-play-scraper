@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Data (lives in Postgres on the server, never in git)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Secrets
+.env
+deploy/.env
+deploy/backups/
+*.tsbuildinfo

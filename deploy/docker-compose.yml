@@ -1,0 +1,101 @@
+# Production stack: Postgres + API + scraping worker + Caddy (HTTPS, serves the site).
+#   cd deploy && cp .env.example .env && nano .env && docker compose up -d --build
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  db:
+    logging: *logging
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gpi
+      POSTGRES_USER: gpi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gpi -d gpi"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    logging: *logging
+    build: ../backend
+    env_file: .env
+    environment:
+      GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
+    command: ["python", "-m", "gpi.cli", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    logging: *logging
+    build: ../backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
+      GPI_COOKIE_SECURE: "true"
+      GPI_PUBLIC_URL: https://${DOMAIN}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    logging: *logging
+    build: ../backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
+    command: ["python", "-m", "gpi.cli", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    logging: *logging
+    build: ../frontend
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  # Nightly database dump, 7 days kept, in the ./backups folder next to this file.
+  backup:
+    logging: *logging
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          pg_dump -h db -U gpi -d gpi -Fc -f /backups/gpi-$$(date +%F).dump
+          find /backups -name 'gpi-*.dump' -mtime +7 -delete
+          sleep 86400
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
