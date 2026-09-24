@@ -223,6 +223,17 @@ class JobRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
 
+class LogEntry(Base):
+    """Worker log mirrored into the DB for the "Данные" page."""
+    __tablename__ = "log_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, index=True)
+    level: Mapped[str] = mapped_column(String(10))
+    job: Mapped[str | None] = mapped_column(String(64))
+    message: Mapped[str] = mapped_column(Text)
+
+
 # ============================ Tenants ============================
 
 class Workspace(Base):

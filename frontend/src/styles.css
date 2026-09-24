@@ -349,3 +349,16 @@ code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-3); 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------------- data page ---------------- */
+.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.log { max-height: 520px; overflow: auto; padding: 8px 0; font-family: var(--font-mono); font-size: 12px; }
+.log-line { display: flex; gap: 10px; padding: 3px 14px; align-items: baseline; }
+.log-line:hover { background: var(--bg-hover); }
+.log-ts { color: var(--faint); flex: none; }
+.log-lvl { width: 10px; flex: none; text-align: center; color: var(--faint); }
+.log-job { flex: none; color: var(--info); }
+.log-msg { white-space: pre-wrap; word-break: break-word; color: var(--muted); }
+.log-line.warning .log-msg, .log-line.warning .log-lvl { color: var(--warn); }
+.log-line.error .log-msg, .log-line.error .log-lvl, .log-line.critical .log-msg { color: var(--bad); }

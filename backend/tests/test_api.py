@@ -123,3 +123,39 @@ def test_brand_rules_admin(client):
     seed_radar()
     flags = client.get("/api/games", params={"hide_flags": ""}).json()["items"]
     assert "hc_publisher" in next(g for g in flags if g["app_id"] == "indie.hit")["brand_flags"]
+
+
+def test_daily_steps_progress_and_logs(client, monkeypatch):
+    from gpi import cli
+    from gpi.pipeline.common import install_db_logging, job_run, log, parallel
+
+    def fake_charts():
+        with job_run("charts") as stats:
+            for _ in parallel(lambda x: x, range(120), workers=2, label="charts"):
+                pass
+            stats["requests"] = 120
+        return stats
+
+    def broken():
+        raise RuntimeError("google said no")
+
+    registry = {name: (lambda: {}) for name in set(cli.DAILY_ORDER)}
+    registry.update(charts=fake_charts, keywords=broken)
+    monkeypatch.setattr(cli, "jobs", lambda: registry)
+    handler = install_db_logging()
+    try:
+        cli.daily()
+    finally:
+        log.removeHandler(handler)
+
+    st = client.get("/api/status").json()
+    run = st["history"][0]
+    assert run["status"] == "error"
+    steps = {s["step"]: s for s in run["stats"]["steps"]}
+    assert steps["charts"]["status"] == "ok" and steps["charts"]["stats"]["requests"] == 120
+    assert steps["keywords"]["status"] == "error" and "google said no" in steps["keywords"]["error"]
+    assert st["runs"]["charts"]["status"] == "ok"
+    logs = client.get("/api/logs").json()
+    assert any("суточный прогон завершён" in l["message"] for l in logs)
+    warn = client.get("/api/logs", params={"level": "warning"}).json()
+    assert all(l["level"] in ("WARNING", "ERROR", "CRITICAL") for l in warn) and warn
