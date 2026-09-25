@@ -54,6 +54,9 @@ export type Game = {
   pre_register: boolean;
   soft_launch: boolean;
   soft_launch_markets: string[];
+  revival: boolean;
+  hidden_gem: boolean;
+  chart_countries_any: number;
   installs: number | null;
   v7: number | null;
   v7_prev: number | null;
@@ -96,6 +99,7 @@ export type Keyword = {
   young_best_installs: number | null;
   brand_share: number | null;
   title_match_share: number | null;
+  games_share: number | null;
   analyzed_at: string | null;
 };
 

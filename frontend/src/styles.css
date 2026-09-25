@@ -266,6 +266,14 @@ table.data tbody tr { animation: rowIn .35s both; }
 .flag.big_dev, .flag.big_portfolio { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); }
 .flag.prereg { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .flag.soft { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); border-style: dashed; }
+.flag.gem { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.flag.revival { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); border-style: dashed; }
+.presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.preset { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--bg-2); cursor: pointer; text-align: left; min-width: 170px; transition: border-color .15s, background .15s; }
+.preset:hover { border-color: var(--accent); }
+.preset.on { border-color: var(--accent); background: var(--accent-soft); }
+.preset b { font-family: var(--font-display); font-size: 12.5px; font-weight: 600; }
+.preset span { font-size: 11.5px; color: var(--muted); }
 .flag.new { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
 
 .pill { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--bg-3); font-size: 11.5px; color: var(--muted); }

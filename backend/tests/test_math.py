@@ -171,3 +171,47 @@ def test_soft_launch_markets(monkeypatch):
     monkeypatch.setattr(client, "request", fake_request)
     monkeypatch.setattr(client, "gps_parse_dom", lambda dom, app_id, url: pages[dom])
     assert client.soft_launch_markets("x") == ["ph", "id"]
+
+
+def test_non_game_queries_lose_opportunity():
+    from types import SimpleNamespace
+    from datetime import datetime
+    from gpi.db import session_scope
+    with session_scope() as s:
+        rules = brand.Rules.load(s)
+    results = [{"app_id": f"a{i}", "title": "Hair Dye", "developer": "X", "score": 4.2, "min_installs": 100_000,
+                "rank": i + 1} for i in range(10)]
+    apps = {f"a{i}": SimpleNamespace(is_game=i < 2, details_at=datetime.utcnow(), released=None,
+                                     developer_id=None, real_installs=None) for i in range(10)}
+    m = competition_metrics("hair dye", results, apps, rules, date.today())
+    assert m["games_share"] == 0.2
+    games = dict(m, games_share=1.0)
+    assert opportunity(80, m) < opportunity(80, games) / 2
+
+
+def test_keyword_markets_are_consistent():
+    from gpi.pipeline.keyword_markets import MARKETS
+    from gpi.pipeline.keywords import seed_queries
+    assert [m.country for m in MARKETS][0] == "us" and sum(m.primary for m in MARKETS) == 1
+    assert len({(m.lang, m.country) for m in MARKETS}) == len(MARKETS) == 8
+    for m in MARKETS:
+        assert len(m.seeds) >= 30 and len(set(m.seeds)) == len(m.seeds), m.country
+    ru = next(m for m in MARKETS if m.country == "ru")
+    assert "гонки а" in seed_queries("гонки", ru.suffixes)
+
+
+def test_games_share_backfill_from_stored_ranks():
+    from datetime import datetime
+    from gpi.db import session_scope
+    from gpi.models import App, Keyword, KeywordRank
+    from gpi.pipeline.keywords import backfill_games_share
+    with session_scope() as s:
+        s.add(Keyword(id=1, term="hair dye", demand=80, competition=30, young_share=0.5,
+                      young_best_installs=1000, analyzed_at=datetime.utcnow(), opportunity=60))
+        for i in range(10):
+            s.add(App(app_id=f"k{i}", is_game=i < 3, details_at=datetime.utcnow(), status="active"))
+            s.add(KeywordRank(keyword_id=1, app_id=f"k{i}", rank=i + 1, date=date.today()))
+    assert backfill_games_share() == 1
+    with session_scope() as s:
+        k = s.get(Keyword, 1)
+        assert k.games_share == 0.3 and k.opportunity < 60

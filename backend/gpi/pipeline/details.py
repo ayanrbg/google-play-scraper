@@ -5,10 +5,10 @@ Installs in Google Play are worldwide, so one reading per app per day is enough.
 
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 
 from gpi.db import session_scope, upsert
-from gpi.models import App, GameMetrics, Snapshot
+from gpi.models import App, ChartDaily, GameMetrics, Snapshot
 from gpi.pipeline.common import job_run, log, parallel
 from gpi.play import client
 from gpi.play.http import NotFound
@@ -90,6 +90,8 @@ def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
         track = should_track(d, today)
         if set_tracked:
             row["tracked"] = track
+            if track:
+                row["track_reason"] = "prereg" if d.get("pre_register") else "young"
             tracked_new += int(track)
         if track and d.get("real_installs") is not None:
             batch_snaps.append({"app_id": app_id, "date": today, "real_installs": d["real_installs"],
@@ -108,7 +110,31 @@ def enrich():
         with session_scope() as s:
             ids = s.scalars(select(App.app_id).where(App.details_at.is_(None), App.status == "active")).all()
         stats.update(candidates=len(ids), **refresh(list(ids), "enrich", set_tracked=True))
+        stats["revivals"] = select_revivals(date.today())
     return stats
+
+
+def select_revivals(today: date) -> int:
+    """Old games surging in Movers & Shakers come back into daily tracking.
+
+    A mechanic that suddenly takes off years after release is exactly the "trend wave" kind of
+    idea. Evergreen giants that just wobble in the charts are left out by the installs cap.
+    """
+    cfg = get_settings()
+    too_old = today - timedelta(days=cfg.track_max_age_days)
+    with session_scope() as s:
+        chart_day = s.scalar(select(func.max(ChartDaily.date)))
+        if not chart_day:
+            return 0
+        surging = select(ChartDaily.app_id).where(
+            ChartDaily.date == chart_day, ChartDaily.collection == "trending",
+            or_(ChartDaily.n_countries >= cfg.revival_min_countries, ChartDaily.best_rank <= cfg.revival_top_rank))
+        res = s.execute(update(App).where(
+            App.app_id.in_(surging), App.is_game.is_(True), App.status == "active", App.tracked.is_(False),
+            App.released < too_old,
+            or_(App.real_installs.is_(None), App.real_installs < cfg.revival_max_installs),
+        ).values(tracked=True, track_reason="revival"))
+        return res.rowcount or 0
 
 
 def track():
@@ -117,9 +143,12 @@ def track():
     today = date.today()
     with job_run("track") as stats:
         with session_scope() as s:
+            has_today = exists().where(Snapshot.app_id == App.app_id, Snapshot.date == today)
             ids = s.scalars(select(App.app_id).where(
                 App.tracked.is_(True), App.status == "active",
-                or_(App.details_at.is_(None), App.details_at < datetime.combine(today, datetime.min.time())),
+                # not refreshed today, or refreshed as a stub before it became tracked (revivals)
+                or_(App.details_at.is_(None), App.details_at < datetime.combine(today, datetime.min.time()),
+                    ~has_today),
             )).all()
         stats.update(candidates=len(ids), **refresh(list(ids), "track", set_tracked=False))
         stats["untracked"] = untrack_stale(today, cfg.track_max_age_days, cfg.untrack_after_days)
@@ -161,9 +190,12 @@ def untrack_stale(today: date, max_age: int, idle_days: int) -> int:
     """Stop daily tracking of games that got old, or vanished from charts long ago and stalled."""
     too_old = today - timedelta(days=max_age)
     idle = today - timedelta(days=idle_days)
+    keep_revival = today - timedelta(days=get_settings().revival_keep_days)
     with session_scope() as s:
+        # Old games leave tracking - unless they are a revival still seen in Movers & Shakers lately
+        still_surging = and_(App.track_reason == "revival", App.last_trending >= keep_revival)
         r1 = s.execute(update(App).where(App.tracked.is_(True), App.pre_register.is_(False),
-                                         App.released < too_old).values(tracked=False))
+                                         App.released < too_old, ~still_surging).values(tracked=False))
         stalled = select(GameMetrics.app_id).where(GameMetrics.v7 < 50)
         r2 = s.execute(update(App).where(
             App.tracked.is_(True), App.pre_register.is_(False),

@@ -73,11 +73,21 @@ export function Sparkline({ data, width = 110, height = 28 }: { data: (number | 
   );
 }
 
-export function Flags({ flags, prereg, age, softLaunch }: {
-  flags: string[]; prereg?: boolean; age?: number | null; softLaunch?: string[] | null;
+export function Flags({ flags, prereg, age, softLaunch, revival, hidden }: {
+  flags: string[]; prereg?: boolean; age?: number | null; softLaunch?: string[] | null; revival?: boolean; hidden?: boolean;
 }) {
   return (
     <>
+      {hidden && (
+        <span className="flag gem" title="Скрытая находка: молодая, растёт, не бренд — и почти не видна в чартах. Такую руками не найти.">
+          ◆ находка
+        </span>
+      )}
+      {revival && (
+        <span className="flag revival" title="Старая игра (больше года), которая снова пошла вверх в Movers & Shakers: волна тренда">
+          ↻ возрождение
+        </span>
+      )}
       {prereg && <span className="flag prereg">пре-рег</span>}
       {softLaunch && softLaunch.length > 0 && (
         <span className="flag soft" title={`До глобального запуска тестировалась в: ${softLaunch.map((c) => c.toUpperCase()).join(", ")}. Возраст считается с глобального запуска.`}>

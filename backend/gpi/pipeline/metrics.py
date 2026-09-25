@@ -22,6 +22,22 @@ from gpi.pipeline.common import job_run
 HISTORY_DAYS = 45
 SPARK_DAYS = 30
 
+# "Hidden gem": what manual browsing of the stores and big charts would not surface
+GEM_MAX_AGE = 90
+GEM_MIN_VELOCITY = 1000        # installs/day
+GEM_MIN_INSTALLS = 50_000
+GEM_MAX_CHART_COUNTRIES = 5    # charts in at most this many of our 60 countries...
+GEM_MIN_BEST_RANK = 30         # ...and never high: best position below #30
+BRAND = {"major", "hc_publisher", "franchise"}
+
+
+def is_hidden_gem(age, v, installs, flags, chart_countries, best_any_rank, revival) -> bool:
+    if revival or age is None or age > GEM_MAX_AGE or set(flags) & BRAND:
+        return False
+    if (v or 0) < GEM_MIN_VELOCITY or (installs or 0) < GEM_MIN_INSTALLS:
+        return False
+    return chart_countries <= GEM_MAX_CHART_COUNTRIES and (best_any_rank is None or best_any_rank > GEM_MIN_BEST_RANK)
+
 
 # ----------------------------- series math -----------------------------
 
@@ -117,9 +133,14 @@ def run(today: date | None = None):
         charts_now: dict[str, dict[str, int]] = defaultdict(dict)
         charts_before: dict[str, int] = defaultdict(int)
         best_rank: dict[str, int] = {}
+        best_any: dict[str, int] = {}                     # best position in any chart
+        chart_ccs: dict[str, set] = defaultdict(set)      # countries across all charts
         if chart_date:
             for r in s.execute(select(ChartDaily).where(ChartDaily.date == chart_date)).scalars():
                 charts_now[r.app_id][r.collection] = r.n_countries
+                chart_ccs[r.app_id].update((r.countries or {}).keys())
+                if r.best_rank:
+                    best_any[r.app_id] = min(best_any.get(r.app_id, 10**6), r.best_rank)
                 if r.collection in ("top_free", "top_new_free") and r.best_rank:
                     best_rank[r.app_id] = min(best_rank.get(r.app_id, 10**6), r.best_rank)
             week_ago = s.scalar(select(func.max(ChartDaily.date)).where(ChartDaily.date <= chart_date - timedelta(days=7)))
@@ -156,10 +177,12 @@ def run(today: date | None = None):
             accel = (v7 / v7_prev) if (v7 is not None and v7_prev and v7_prev > 0) else None
             age = (today - a.released).days if a.released else None
             installs = a.real_installs
+            revival = a.track_reason == "revival"
             v_life = (installs / max(age, 1)) if (installs is not None and age is not None and not a.pre_register) else None
             # Not enough history for a 7-day window yet (just discovered): use lifetime average -
-            # except after a soft launch, where installs predate the global release date.
-            v_eff = v7 if v7 is not None else (None if a.soft_launch else v_life)
+            # except after a soft launch (installs predate the global release date) and for old
+            # revived games (years of installs say nothing about the current surge).
+            v_eff = v7 if v7 is not None else (None if (a.soft_launch or revival) else v_life)
 
             cn = charts_now.get(a.app_id, {})
             new_c, top_c = cn.get("top_new_free", 0), cn.get("top_free", 0)
@@ -176,8 +199,12 @@ def run(today: date | None = None):
             vis = visibility.get(a.app_id, 0.0)
             spark = interpolate_daily(pts, today - timedelta(days=SPARK_DAYS - 1), today) if len(pts) >= 2 else []
 
+            n_chart_cc = len(chart_ccs.get(a.app_id, ()))
+            gem = is_hidden_gem(age, v_eff, installs, flags, n_chart_cc, best_any.get(a.app_id), revival)
+
             metrics_rows.append({
                 "app_id": a.app_id, "computed_at": datetime.utcnow(), "age_days": age, "installs": installs,
+                "revival": revival, "hidden_gem": gem, "chart_countries_any": n_chart_cc,
                 "v7": v_eff, "v7_prev": v7_prev, "accel": accel, "v_life": v_life,
                 "ratings_v7": velocity(rpts, today, 7),
                 "new_countries": new_c, "top_countries": top_c, "trending_countries": trending_c,

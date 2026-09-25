@@ -175,3 +175,50 @@ def test_soft_launch_games_get_no_lifetime_estimate(client):
     only = client.get("/api/games", params={"soft_launch": "only"}).json()["items"]
     assert [g["app_id"] for g in only] == ["soft.game"]
     assert client.get("/api/games/soft.game").json()["app"]["soft_launch_markets"] == ["ph", "id"]
+
+
+def test_revivals_are_tracked_while_surging_and_dropped_after(client):
+    from gpi.pipeline.details import select_revivals, untrack_stale
+    old = TODAY - timedelta(days=900)
+    with session_scope() as s:
+        for app_id, installs, n_c, rank in [("old.surge", 3_000_000, 4, 80),    # 4 countries -> revival
+                                            ("old.top", 2_000_000, 1, 5),       # top-5 somewhere -> revival
+                                            ("old.giant", 900_000_000, 9, 3),   # evergreen giant -> no
+                                            ("old.meh", 1_000_000, 1, 150)]:    # one country, low -> no
+            s.add(App(app_id=app_id, title=app_id, released=old, is_game=True, status="active", tracked=False,
+                      real_installs=installs, details_at=datetime.utcnow(), last_trending=TODAY))
+            s.add(ChartDaily(app_id=app_id, date=TODAY, collection="trending", n_countries=n_c, best_rank=rank,
+                             countries={"us": rank}))
+    assert select_revivals(TODAY) == 2
+    with session_scope() as s:
+        assert {a.app_id for a in s.query(App).filter(App.tracked.is_(True))} == {"old.surge", "old.top"}
+        assert s.get(App, "old.surge").track_reason == "revival"
+    untrack_stale(TODAY, 365, 120)                       # still surging -> kept
+    with session_scope() as s:
+        assert s.get(App, "old.surge").tracked
+        s.get(App, "old.surge").last_trending = TODAY - timedelta(days=45)
+    untrack_stale(TODAY, 365, 120)                       # quiet for 45 days -> dropped
+    with session_scope() as s:
+        assert not s.get(App, "old.surge").tracked and s.get(App, "old.top").tracked
+    metrics.run(TODAY)
+    r = client.get("/api/games", params={"revival": "only"}).json()["items"]
+    assert [g["app_id"] for g in r] == ["old.top"] and r[0]["revival"] is True
+    assert r[0]["v7"] is None     # no lifetime average for a years-old game
+
+
+def test_hidden_gems(client):
+    # fresh, growing, not a brand, charts in 2 countries at #45 -> hidden gem
+    add_game("gem", "Quiet Hit", "Tiny", 20, [i * 20_000 for i in range(1, 16)])
+    # same growth but charts high in many countries -> anyone would see it
+    add_game("loud", "Loud Hit", "Other", 20, [i * 20_000 for i in range(1, 16)])
+    with session_scope() as s:
+        s.add(ChartDaily(app_id="gem", date=TODAY, collection="top_new_free", n_countries=2, best_rank=45,
+                         countries={"ph": 45, "id": 60}))
+        s.add(ChartDaily(app_id="loud", date=TODAY, collection="top_free", n_countries=30, best_rank=2,
+                         countries={c: 2 for c in ["us", "gb", "de", "br", "in", "jp", "kr"]}))
+    metrics.run(TODAY)
+    items = {g["app_id"]: g for g in client.get("/api/games").json()["items"]}
+    assert items["gem"]["hidden_gem"] and not items["loud"]["hidden_gem"]
+    assert items["gem"]["chart_countries_any"] == 2
+    only = client.get("/api/games", params={"hidden": "true"}).json()["items"]
+    assert [g["app_id"] for g in only] == ["gem"]

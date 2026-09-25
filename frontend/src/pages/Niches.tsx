@@ -1,12 +1,15 @@
 import { useNavigate } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ApiError, Keyword, Page, api } from "../api";
-import { Chips, FGroup, LazyInput, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
+import { Chips, FGroup, LazyInput, Seg, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
 import { Empty, Loader, Meter, Pager, SortTh } from "../components/ui";
 import { SavedViews } from "../components/views";
 import { fmtN, fmtPct } from "../format";
 
+type Market = { country: string; lang: string; label: string; analyzed: number };
+
 const DEFAULTS: Record<string, string> = {
+  country: "us", min_games_share: "0.6",
   q: "", min_demand: "", max_competition: "", min_opportunity: "", min_young_share: "", max_brand_share: "",
   sort: "opportunity", dir: "desc", page: "1",
 };
@@ -23,6 +26,7 @@ export default function Niches() {
     placeholderData: keepPreviousData,
     retry: false,
   });
+  const markets = useQuery({ queryKey: ["keyword-markets"], queryFn: () => api<Market[]>("/keyword-markets"), retry: false });
   const sortBy = (field: string) => {
     if (f.get("sort") === field) f.set({ dir: f.get("dir") === "desc" ? "asc" : "desc" });
     else f.set({ sort: field, dir: field === "competition" ? "asc" : "desc" });
@@ -49,8 +53,25 @@ export default function Niches() {
       <div className={`radar ${panel.open ? "" : "collapsed"}`}>
         {panel.open && (
         <aside className="panel filters">
+          <FGroup title="Язык поиска" hint="рынок Google Play">
+            <div className="chips">
+              {(markets.data || []).map((m) => (
+                <button key={m.country} type="button" className={`chip ${f.get("country") === m.country ? "on" : ""}`}
+                        onClick={() => f.set({ country: m.country })} title={`разобрано запросов: ${m.analyzed}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </FGroup>
           <FGroup title="Поиск">
             <LazyInput value={f.get("q")} onCommit={(v) => f.set({ q: v })} placeholder="запрос" />
+          </FGroup>
+          <FGroup title="Только игровые запросы" hint="доля игр в топ-10 выдачи">
+            <Seg
+              options={[["0.6", "60%+"], ["0.8", "80%+"], ["", "Все"]]}
+              value={f.get("min_games_share")}
+              onChange={(v) => f.set({ min_games_share: v })}
+            />
           </FGroup>
           <FGroup title="Мои фильтры">
             <SavedViews page="keywords" current={() => f.all()} onApply={(p) => f.replaceAll(p)} />

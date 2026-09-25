@@ -71,6 +71,9 @@ def run(countries: list[str] | None = None, categories: list[str] | None = None,
             ids = list(stubs)
             for i in range(0, len(ids), 5000):
                 s.execute(update(App).where(App.app_id.in_(ids[i:i + 5000])).values(last_charted=today))
+            trending = [app_id for (app_id, coll) in agg if coll == "trending"]
+            for i in range(0, len(trending), 5000):
+                s.execute(update(App).where(App.app_id.in_(trending[i:i + 5000])).values(last_trending=today))
 
         stats.update(requests=len(tasks), failed=failed, charted_apps=len(stubs),
                      new_apps=len(new), rows=len(rows))

@@ -10,7 +10,7 @@ import { fmtAccel, fmtAge, fmtN, fmtRating } from "../format";
 export const GAME_DEFAULTS: Record<string, string> = {
   q: "", genres: "", max_age: "180", min_v7: "", min_accel: "", min_trend: "", min_installs: "", max_installs: "",
   min_rating: "", min_countries: "", min_search: "", hide_flags: "major,hc_publisher,franchise", max_dev_installs: "",
-  ads: "", iap: "", prereg: "include", soft_launch: "include", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
+  ads: "", iap: "", prereg: "include", soft_launch: "include", revival: "include", hidden: "", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
 };
 
 const GENRES: [string, string][] = [
@@ -19,6 +19,14 @@ const GENRES: [string, string][] = [
   ["GAME_ROLE_PLAYING", "Ролевые"], ["GAME_ADVENTURE", "Приключения"], ["GAME_RACING", "Гонки"],
   ["GAME_SPORTS", "Спорт"], ["GAME_BOARD", "Настольные"], ["GAME_CARD", "Карточные"], ["GAME_WORD", "Словесные"],
   ["GAME_TRIVIA", "Викторины"], ["GAME_EDUCATIONAL", "Обучающие"], ["GAME_MUSIC", "Музыкальные"], ["GAME_CASINO", "Казино"],
+];
+
+// One-click views for the questions we actually ask
+const PRESETS: { name: string; hint: string; params: Record<string, string> }[] = [
+  { name: "◆ Скрытые находки", hint: "растут, но почти не видны в чартах", params: { hidden: "true", max_age: "90", sort: "v7" } },
+  { name: "Софт-лонч → мир", hint: "прошли тест и вышли глобально", params: { soft_launch: "only", max_age: "60" } },
+  { name: "↻ Возрождения", hint: "старые игры снова в росте", params: { revival: "only", max_age: "", sort: "trend_score" } },
+  { name: "Свежие в Top New", hint: "до 30 дней, в чартах новинок", params: { charts: "top_new", max_age: "30" } },
 ];
 
 const FLAG_OPTIONS: [string, string, string][] = [
@@ -75,6 +83,18 @@ export default function Radar() {
         </div>
       </div>
 
+      <div className="presets">
+        {PRESETS.map((p) => {
+          const on = Object.entries(p.params).every(([k, v]) => f.get(k) === v);
+          return (
+            <button key={p.name} className={`preset ${on ? "on" : ""}`} onClick={() => (on ? f.reset() : f.replaceAll(p.params))}>
+              <b>{p.name}</b>
+              <span>{p.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className={`radar ${panel.open ? "" : "collapsed"}`}>
         {panel.open && (
         <aside className="panel filters">
@@ -86,7 +106,7 @@ export default function Radar() {
           </FGroup>
           <FGroup title="Возраст игры" hint="с даты релиза">
             <Chips
-              options={[["14", "≤ 2 нед"], ["30", "≤ 30 дн"], ["60", "≤ 60"], ["90", "≤ 90"], ["180", "≤ 180"], ["365", "≤ 1 года"]]}
+              options={[["14", "≤ 2 нед"], ["30", "≤ 30 дн"], ["60", "≤ 60"], ["90", "≤ 90"], ["180", "≤ 180"], ["365", "≤ 1 года"], ["", "Любой"]]}
               value={f.get("max_age")}
               onChange={(v) => f.set({ max_age: v })}
             />
@@ -180,6 +200,23 @@ export default function Radar() {
               onChange={(v) => f.set({ prereg: v })}
             />
           </FGroup>
+          <FGroup title="Скрытые находки" hint="то, что руками не найти">
+            <label className="check">
+              <input type="checkbox" checked={f.get("hidden") === "true"} onChange={(e) => f.set({ hidden: e.target.checked ? "true" : "" })} />
+              <span>
+                Только находки
+                <br />
+                <span className="faint" style={{ fontSize: 11 }}>до 90 дней, 1K+/день, не бренд, в чартах ≤ 5 стран и не выше #30</span>
+              </span>
+            </label>
+          </FGroup>
+          <FGroup title="Возрождения" hint="старые игры в росте">
+            <Seg
+              options={[["include", "Все"], ["only", "Только"], ["exclude", "Без"]]}
+              value={f.get("revival")}
+              onChange={(v) => f.set({ revival: v, ...(v === "only" ? { max_age: "" } : {}) })}
+            />
+          </FGroup>
           <FGroup title="Софт-лонч" hint="тест в части стран до релиза">
             <Seg
               options={[["include", "Все"], ["only", "Только"], ["exclude", "Без"]]}
@@ -261,7 +298,7 @@ export default function Radar() {
                             <div className="app-dev">
                               {g.developer}
                               {" "}
-                              <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch ? null : g.age_days} softLaunch={g.soft_launch_markets} />
+                              <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch || g.revival ? null : g.age_days} softLaunch={g.soft_launch_markets} revival={g.revival} hidden={g.hidden_gem} />
                             </div>
                           </div>
                         </div>

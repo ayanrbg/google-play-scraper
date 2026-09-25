@@ -46,17 +46,28 @@ def expand_similar(limit: int) -> dict:
 
 
 def expand_developers() -> dict:
-    """Refresh developer pages for studios of tracked games."""
+    """Refresh developer pages for studios of tracked games.
+
+    Studios with a fast-growing non-brand game are re-checked weekly: their next release is often
+    the next hit, and it may not reach any chart for a while.
+    """
     cfg = get_settings()
     stale = datetime.utcnow() - timedelta(days=cfg.developer_refresh_days)
+    stale_hot = datetime.utcnow() - timedelta(days=cfg.developer_refresh_hot_days)
     with session_scope() as s:
         dev_rows = s.execute(
             select(App.developer_id, func.max(App.developer))
             .where(App.tracked.is_(True), App.developer_id.is_not(None))
             .group_by(App.developer_id)
         ).all()
-        fresh = set(s.scalars(select(Developer.developer_id).where(Developer.fetched_at >= stale)).all())
-    todo = {d: name for d, name in dev_rows if d not in fresh}
+        hot = set(s.scalars(
+            select(App.developer_id).join(GameMetrics, GameMetrics.app_id == App.app_id)
+            .where(App.developer_id.is_not(None), GameMetrics.flag_major.is_(False),
+                   GameMetrics.flag_franchise.is_(False),
+                   or_(GameMetrics.trend_score >= 50, GameMetrics.v7 >= 5000))).all())
+        fetched = dict(s.execute(select(Developer.developer_id, Developer.fetched_at)).all())
+    todo = {d: name for d, name in dev_rows
+            if not fetched.get(d) or fetched[d] < (stale_hot if d in hot else stale)}
 
     found: list[str] = []
     rows = []

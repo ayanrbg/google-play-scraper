@@ -52,6 +52,8 @@ class GameFilters:
         ads: str | None = None, iap: str | None = None,           # yes | no
         prereg: str = "include",                                   # include | only | exclude
         soft_launch: str = "include",                              # include | only | exclude
+        revival: str = "include",                                  # include | only | exclude
+        hidden: bool = False,                                      # only hidden gems
         charts: str | None = None,                                 # top_new | trending | any
         marks: str = "hide_rejected",                              # all | hide_rejected | interesting | in_work | rejected | unmarked
         sort: str = "trend_score", dir: str = "desc",
@@ -113,6 +115,12 @@ def build_query(f: GameFilters, ctx: Ctx):
         conds.append(App.soft_launch.is_(True))
     elif f.soft_launch == "exclude":
         conds.append(or_(App.soft_launch.is_(None), App.soft_launch.is_(False)))
+    if f.revival == "only":
+        conds.append(GameMetrics.revival.is_(True))
+    elif f.revival == "exclude":
+        conds.append(GameMetrics.revival.is_(False))
+    if f.hidden:
+        conds.append(GameMetrics.hidden_gem.is_(True))
     if f.charts == "top_new":
         conds.append(GameMetrics.new_countries > 0)
     elif f.charts == "trending":
@@ -139,6 +147,7 @@ def row_payload(app: App, m: GameMetrics, mark_status, mark_note) -> dict:
         "icon_url": app.icon_url, "genre_id": app.genre_id, "genre": GENRE_NAMES_RU.get(app.genre_id or "", app.genre_id),
         "released": app.released, "age_days": m.age_days, "pre_register": app.pre_register,
         "soft_launch": bool(app.soft_launch), "soft_launch_markets": app.soft_launch_markets or [],
+        "revival": m.revival, "hidden_gem": m.hidden_gem, "chart_countries_any": m.chart_countries_any,
         "installs": m.installs, "v7": m.v7, "v7_prev": m.v7_prev, "accel": m.accel, "v_life": m.v_life,
         "rating": app.score, "ratings": app.ratings,
         "new_countries": m.new_countries, "top_countries": m.top_countries,

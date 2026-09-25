@@ -59,13 +59,17 @@ function summary(step: string, s: Record<string, any> | undefined): string {
     case "expand":
       return `предрегистрации +${n(s.prereg?.new)} · похожие +${n(s.similar?.new)} · студий проверено ${n(s.developers?.developers)} (+${n(s.developers?.new)} игр)`;
     case "enrich":
-      return `карточек ${n(s.ok)} из ${n(s.candidates)} · взято на отслеживание ${n(s.tracked)} · удалены из Google Play ${n(s.missing)} · ошибок ${n(s.failed)}`;
+      return `карточек ${n(s.ok)} из ${n(s.candidates)} · взято на отслеживание ${n(s.tracked)}` +
+        (s.soft_launch ? ` · софт-лончей ${n(s.soft_launch)}` : "") +
+        (s.revivals ? ` · возрождений ${n(s.revivals)}` : "") +
+        ` · удалены из Google Play ${n(s.missing)} · ошибок ${n(s.failed)}`;
     case "track":
       return `обновлено ${n(s.ok)} из ${n(s.candidates)} · ошибок ${n(s.failed)} · снято с отслеживания ${n(s.untracked)}`;
     case "metrics":
       return `посчитано игр ${n(s.games)}`;
     case "keywords":
-      return `сидов ${n(s.seeds)} · найдено запросов ${n(s.terms)} · разобрано ${n(s.analyzed)}`;
+      return `сидов ${n(s.seeds)} · найдено запросов ${n(s.terms)} · разобрано ${n(s.analyzed)}` +
+        (s.markets ? ` · языков ${Object.keys(s.markets).length}` : "");
     default:
       return "";
   }

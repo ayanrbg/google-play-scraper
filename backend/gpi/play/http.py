@@ -141,15 +141,16 @@ def routes() -> list[Route]:
             specs = [s for s in cfg.proxies.replace("\n", ",").split(",") if s.strip()]
             _routes = build_routes(cfg.requests_per_second, specs, cfg.proxy_rps)
             if len(_routes) > 1:
-                log.info("сеть: сервер %.1f запр/с + %d прокси по %.1f запр/с (чарты всегда напрямую)",
-                         cfg.requests_per_second, len(_routes) - 1, cfg.proxy_rps)
+                log.info("сеть: сервер %.1f запр/с + %d прокси по %.1f запр/с (чарты %s)",
+                         cfg.requests_per_second, len(_routes) - 1, cfg.proxy_rps,
+                         "тоже через прокси" if cfg.proxy_heavy else "напрямую")
         return _routes
 
 
 def pick(heavy: bool = False) -> Route:
-    """The route that can send soonest (heavy requests: only the server's own IP)."""
+    """The route that can send soonest (heavy requests: the server's own IP unless proxy_heavy)."""
     rs = routes()
-    if heavy or len(rs) == 1:
+    if len(rs) == 1 or (heavy and not get_settings().proxy_heavy):
         return rs[0]
     now = time.monotonic()
     healthy = [r for r in rs if r.bench_until <= now] or rs[:1]

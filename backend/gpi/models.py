@@ -46,6 +46,9 @@ class App(Base):
     # Google hides the release date in countries where the game was out earlier.
     soft_launch: Mapped[bool | None] = mapped_column(Boolean)
     soft_launch_markets: Mapped[list | None] = mapped_column(JSON)
+    # young | prereg | revival (an old game surging in Movers & Shakers)
+    track_reason: Mapped[str | None] = mapped_column(String(16))
+    last_trending: Mapped[date | None] = mapped_column(Date)
 
     # Latest values (global: Google Play reports installs worldwide, not per country)
     real_installs: Mapped[int | None] = mapped_column(BigInteger)
@@ -149,6 +152,10 @@ class GameMetrics(Base):
     flag_franchise: Mapped[bool] = mapped_column(Boolean, default=False)
     flag_big_dev: Mapped[bool] = mapped_column(Boolean, default=False)
     flag_big_portfolio: Mapped[bool] = mapped_column(Boolean, default=False)
+    revival: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Young, not a brand, growing - yet barely visible in charts: what manual browsing misses
+    hidden_gem: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    chart_countries_any: Mapped[int] = mapped_column(Integer, default=0)
     dev_max_installs: Mapped[int | None] = mapped_column(BigInteger)
     dev_app_count: Mapped[int | None] = mapped_column(Integer)
     trend_score: Mapped[float] = mapped_column(Float, default=0, index=True)
@@ -189,6 +196,7 @@ class Keyword(Base):
     brand_share: Mapped[float | None] = mapped_column(Float)
     title_match_share: Mapped[float | None] = mapped_column(Float)
     top_apps: Mapped[list] = mapped_column(JSON, default=list)
+    games_share: Mapped[float | None] = mapped_column(Float)   # share of games in the top results
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
 
     __table_args__ = (UniqueConstraint("term", "lang", "country"),)

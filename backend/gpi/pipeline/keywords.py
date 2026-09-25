@@ -14,33 +14,15 @@ from statistics import median
 
 from sqlalchemy import delete, select
 
-from gpi.catalog import KEYWORD_MARKETS
 from gpi.db import session_scope, upsert
 from gpi.models import App, GameMetrics, Keyword, KeywordRank, SeedState
 from gpi.pipeline import brand
 from gpi.pipeline.common import job_run, log, parallel
 from gpi.pipeline.details import add_stubs, refresh
+from gpi.pipeline.keyword_markets import MARKETS, Market
 from gpi.play import client
 from gpi.settings import get_settings
 
-GENRE_SEEDS = [
-    "puzzle", "sort", "merge", "match", "block", "tile", "idle", "tycoon", "simulator", "survival",
-    "zombie", "shooter", "racing", "car", "parking", "drift", "truck", "bus", "city", "farm",
-    "cooking", "restaurant", "cafe", "hotel", "hospital", "school", "makeover", "dress up",
-    "fashion", "hair", "nail", "baby", "pet", "cat", "dog", "horse", "dinosaur", "dragon", "monster",
-    "robot", "ninja", "knight", "magic", "tower defense", "castle", "kingdom", "war", "army",
-    "battle", "arena", "io", "snake", "ball", "run", "jump", "stack", "color", "paint", "draw",
-    "coloring", "word", "crossword", "trivia", "quiz", "math", "brain", "logic", "escape",
-    "hidden object", "mystery", "horror", "scary", "prank", "asmr", "satisfying", "relax", "fidget",
-    "slime", "cake", "candy", "fruit", "water", "screw", "nuts bolts", "jam", "traffic", "hexa",
-    "2048", "solitaire", "mahjong", "sudoku", "chess", "domino", "bingo", "ludo", "dice",
-    "fishing", "hunting", "sniper", "gun", "plane", "train", "ship", "tank", "mining", "craft",
-    "building", "sandbox", "open world", "obby", "parkour", "stickman", "ragdoll", "physics",
-    "car crash", "mech", "space", "pirate", "fish", "ocean", "garden", "home design", "house",
-    "decor", "cleaning", "wash", "repair", "doctor", "dentist", "clicker", "roguelike", "rpg",
-    "anime", "gacha", "card battle", "auto battler", "survivor", "platformer", "runner", "arcade",
-    "pixel", "offline games", "games for kids", "2 player games", "multiplayer", "simulator games",
-]
 STOPWORDS = {"the", "and", "for", "with", "game", "games", "free", "new", "best", "super", "mega",
              "puzzle", "master", "world", "legend", "legends", "story", "saga", "online", "offline",
              "pro", "hd", "lite", "fun", "adventure", "simulator", "idle", "tycoon", "3d", "2d"}
@@ -59,16 +41,17 @@ def demand_from_observation(query: str, term: str, position: int) -> float:
     return (15 + 85 * (1 - p) ** 0.8) * decay
 
 
-def seed_queries(seed: str) -> list[str]:
+def seed_queries(seed: str, suffixes: list[str] | None = None) -> list[str]:
+    suffixes = suffixes if suffixes is not None else list(string.ascii_lowercase)
     prefixes = [seed[:k] for k in range(2, len(seed)) if seed[k - 1] != " "][:6]
-    return list(dict.fromkeys(prefixes + [seed] + [f"{seed} {c}" for c in string.ascii_lowercase]))
+    return list(dict.fromkeys(prefixes + [seed] + [f"{seed} {c}" for c in suffixes]))
 
 
-def expand_seed(seed: str, lang: str, country: str) -> dict[str, tuple[float, int, int]]:
+def expand_seed(seed: str, lang: str, country: str, suffixes: list[str] | None = None) -> dict[str, tuple[float, int, int]]:
     """term -> (demand, prefix_len, rank). Only terms that contain the seed's first word are kept."""
-    head = seed.split()[0]
+    head = seed.split()[0].lower()
     out: dict[str, tuple[float, int, int]] = {}
-    for q in seed_queries(seed):
+    for q in seed_queries(seed, suffixes):
         try:
             terms = client.suggest(q, lang, country)
         except Exception as e:
@@ -98,6 +81,9 @@ def competition_metrics(term: str, results: list[dict], apps: dict[str, App], ru
 
     young, young_best, branded = 0, 0, 0
     known = 0
+    carded = [apps[r["app_id"]] for r in top if r["app_id"] in apps and apps[r["app_id"]].details_at]
+    # Share of games among the top results: "hair dye app" or "business suite" are not game niches
+    games_share = round(sum(1 for a in carded if a.is_game) / len(carded), 2) if carded else None
     for r in top:
         a = apps.get(r["app_id"])
         flags = brand.classify(r.get("title"), r.get("developer"), a.developer_id if a else None, None, None, rules)
@@ -125,6 +111,7 @@ def competition_metrics(term: str, results: list[dict], apps: dict[str, App], ru
         "young_best_installs": young_best,
         "brand_share": round(brand_share, 2),
         "title_match_share": round(title_share, 2),
+        "games_share": games_share,
         "top_apps": [r["app_id"] for r in top],
     }
 
@@ -135,7 +122,9 @@ def opportunity(demand: float, m: dict) -> float:
     ease = 1 - m["competition"] / 100
     newcomers = min(1.0, m["young_share"] / 0.3)
     proof = min(1.0, math.log10((m["young_best_installs"] or 0) + 1) / 7)  # a young game with 10M -> 1
-    return round(demand * (0.45 * ease + 0.35 * newcomers + 0.20 * proof), 1)
+    gs = m.get("games_share")
+    games = 1.0 if gs is None else min(1.0, gs / 0.6)    # mostly non-game results -> not our niche
+    return round(demand * (0.45 * ease + 0.35 * newcomers + 0.20 * proof) * games, 1)
 
 
 # ----------------------------- job -----------------------------
@@ -157,26 +146,33 @@ def title_seeds(session, limit: int = 40) -> list[str]:
     return list(dict.fromkeys(seeds))[:limit]
 
 
-def ensure_seeds(session, lang: str, country: str):
+def ensure_seeds(session, mk: Market):
+    lang, country = mk.lang, mk.country
     existing = set(session.scalars(select(SeedState.seed).where(SeedState.lang == lang, SeedState.country == country)).all())
-    rows = [{"seed": s, "lang": lang, "country": country, "source": "genre"} for s in GENRE_SEEDS if s not in existing]
-    rows += [{"seed": s, "lang": lang, "country": country, "source": "title"}
-             for s in title_seeds(session) if s not in existing and s not in GENRE_SEEDS]
+    rows = [{"seed": s, "lang": lang, "country": country, "source": "genre"} for s in mk.seeds if s not in existing]
+    if mk.primary:
+        rows += [{"seed": s, "lang": lang, "country": country, "source": "title"}
+                 for s in title_seeds(session) if s not in existing and s not in mk.seeds]
     upsert(session, SeedState, rows, key=["seed", "lang", "country"], update=[])
 
 
-def run_market(lang: str, country: str, stats: dict):
+def run_market(mk: Market, stats: dict):
     cfg = get_settings()
     today = date.today()
+    lang, country = mk.lang, mk.country
+    seeds_budget = cfg.keyword_seeds_per_run if mk.primary else cfg.keyword_local_seeds_per_run
+    refresh_budget = cfg.keyword_refresh_per_run if mk.primary else cfg.keyword_local_refresh_per_run
+    before = (stats.get("seeds", 0), stats.get("terms", 0), stats.get("analyzed", 0))
 
     # 1. Expand a few seeds via autocomplete (never-expanded first, then the stalest)
     with session_scope() as s:
-        ensure_seeds(s, lang, country)
+        ensure_seeds(s, mk)
         seeds = s.scalars(select(SeedState.seed).where(SeedState.lang == lang, SeedState.country == country)
                           .order_by(SeedState.expanded_at.is_not(None), SeedState.expanded_at)
-                          .limit(cfg.keyword_seeds_per_run)).all()
+                          .limit(seeds_budget)).all()
     found: dict[str, tuple[float, int, int, str]] = {}
-    for seed, terms, err in parallel(lambda sd: expand_seed(sd, lang, country), seeds, workers=2, label="suggest"):
+    for seed, terms, err in parallel(lambda sd: expand_seed(sd, lang, country, mk.suffixes), seeds,
+                                     workers=4, label="suggest"):
         if err:
             continue
         for term, (d, plen, pos) in terms.items():
@@ -204,7 +200,7 @@ def run_market(lang: str, country: str, stats: dict):
         kws = s.execute(select(Keyword.id, Keyword.term, Keyword.demand)
                         .where(Keyword.lang == lang, Keyword.country == country, Keyword.demand >= 10)
                         .order_by(Keyword.analyzed_at.is_not(None), Keyword.analyzed_at, Keyword.demand.desc())
-                        .limit(cfg.keyword_refresh_per_run)).all()
+                        .limit(refresh_budget)).all()
     results: dict[int, list[dict]] = {}
     for kw, res, err in parallel(lambda k: client.search(k.term, lang, country, 20), kws, label="search"):
         if not err:
@@ -236,10 +232,42 @@ def run_market(lang: str, country: str, stats: dict):
             ranks += [{"keyword_id": kw.id, "app_id": r["app_id"], "rank": r["rank"], "date": today} for r in res]
         upsert(s, KeywordRank, ranks, key=["keyword_id", "app_id"])
     stats["analyzed"] = stats.get("analyzed", 0) + len(results)
+    stats.setdefault("markets", {})[country] = {
+        "seeds": stats["seeds"] - before[0], "terms": stats["terms"] - before[1],
+        "analyzed": stats["analyzed"] - before[2]}
+
+
+def backfill_games_share() -> int:
+    """Keywords analyzed before games_share existed: derive it from the stored top-10 ranks."""
+    with session_scope() as s:
+        kws = s.scalars(select(Keyword).where(Keyword.analyzed_at.is_not(None), Keyword.games_share.is_(None))).all()
+        if not kws:
+            return 0
+        rows = s.execute(select(KeywordRank.keyword_id, App.is_game)
+                         .join(App, App.app_id == KeywordRank.app_id)
+                         .where(KeywordRank.keyword_id.in_([k.id for k in kws]), KeywordRank.rank <= TOP_N,
+                                App.details_at.is_not(None))).all()
+        by_kw: dict[int, list[bool]] = {}
+        for kid, is_game in rows:
+            by_kw.setdefault(kid, []).append(bool(is_game))
+        for k in kws:
+            flags = by_kw.get(k.id)
+            if not flags:
+                continue
+            k.games_share = round(sum(flags) / len(flags), 2)
+            if k.competition is not None:
+                k.opportunity = opportunity(k.demand, {
+                    "competition": k.competition, "young_share": k.young_share or 0,
+                    "young_best_installs": k.young_best_installs or 0, "games_share": k.games_share})
+        return len(by_kw)
 
 
 def run():
     with job_run("keywords") as stats:
-        for lang, country in KEYWORD_MARKETS:
-            run_market(lang, country, stats)
+        stats["games_share_backfill"] = backfill_games_share()
+        for mk in MARKETS:
+            try:
+                run_market(mk, stats)
+            except Exception as e:  # one market failing must not cost the others
+                log.warning("ниши %s-%s: %s", mk.lang, mk.country, e)
     return stats

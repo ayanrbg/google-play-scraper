@@ -69,7 +69,7 @@ export default function GamePage() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1>{app.title}</h1>
           <div className="muted" style={{ marginBottom: 8 }}>
-            {app.developer} · {app.genre} · <Flags flags={m?.brand_flags || []} prereg={app.pre_register} age={app.soft_launch ? null : m?.age_days} softLaunch={app.soft_launch_markets} />
+            {app.developer} · {app.genre} · <Flags flags={m?.brand_flags || []} prereg={app.pre_register} age={app.soft_launch ? null : m?.age_days} softLaunch={app.soft_launch_markets} revival={m?.revival} hidden={m?.hidden_gem} />
           </div>
           {app.soft_launch && (
             <div className="banner info" style={{ margin: "0 0 10px", fontSize: 13 }}>

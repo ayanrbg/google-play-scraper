@@ -1,20 +1,26 @@
 """Static catalog: countries, game categories, chart collections."""
 
-# Largest Android markets, covering every region. Charts are scanned for each.
+# Largest Android markets plus the classic soft-launch markets. Charts are scanned for each.
 COUNTRIES = [
     # North America
     "us", "ca", "mx",
     # Latin America
-    "br", "ar", "co", "cl", "pe",
+    "br", "ar", "co", "cl", "pe", "ve", "ec",
     # Europe
     "gb", "de", "fr", "it", "es", "nl", "pl", "se", "tr", "ru", "ua",
+    "at", "ch", "be", "pt", "cz", "ro", "gr", "hu", "ie",
+    # Nordics (soft-launch favourites)
+    "dk", "no", "fi",
     # Asia
-    "jp", "kr", "tw", "hk", "in", "id", "ph", "vn", "th", "my", "sg", "pk",
+    "jp", "kr", "tw", "hk", "in", "id", "ph", "vn", "th", "my", "sg", "pk", "bd", "kz", "uz",
     # Middle East & Africa
-    "sa", "ae", "eg", "za", "ng",
-    # Oceania
-    "au",
+    "sa", "ae", "eg", "za", "ng", "il", "iq", "dz", "ma", "ke",
+    # Oceania (soft-launch favourites)
+    "au", "nz",
 ]
+
+# Where games are usually soft-launched before a global release
+SOFT_LAUNCH_COUNTRIES = ["ph", "id", "au", "nz", "ca", "dk", "no", "fi", "se", "nl", "my", "th", "vn", "sg", "ie"]
 
 GAME_CATEGORIES = [
     "GAME",
@@ -43,5 +49,3 @@ COLLECTIONS = {
 
 CHART_SIZE = 200
 
-# Keyword markets (lang, country). Autocomplete and search are language-specific.
-KEYWORD_MARKETS = [("en", "us")]

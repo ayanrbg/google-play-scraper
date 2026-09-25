@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from gpi.api.deps import Ctx, feature, get_db
 from gpi.catalog import GENRE_NAMES_RU
 from gpi.models import App, GameMetrics, Keyword, KeywordRank
+from gpi.pipeline.keyword_markets import MARKETS
 
 router = APIRouter(prefix="/api")
 
@@ -14,6 +15,7 @@ SORTS = {
     "opportunity": Keyword.opportunity, "demand": Keyword.demand, "competition": Keyword.competition,
     "young_share": Keyword.young_share, "young_best_installs": Keyword.young_best_installs,
     "top_median_installs": Keyword.top_median_installs, "term": Keyword.term, "first_seen": Keyword.first_seen,
+    "games_share": Keyword.games_share,
 }
 
 
@@ -23,7 +25,7 @@ def kw_payload(k: Keyword) -> dict:
         "demand": k.demand, "competition": k.competition, "opportunity": k.opportunity,
         "top_median_installs": k.top_median_installs, "top_avg_rating": k.top_avg_rating,
         "young_share": k.young_share, "young_best_installs": k.young_best_installs,
-        "brand_share": k.brand_share, "title_match_share": k.title_match_share,
+        "brand_share": k.brand_share, "title_match_share": k.title_match_share, "games_share": k.games_share,
         "suggest_prefix_len": k.suggest_prefix_len, "analyzed_at": k.analyzed_at, "first_seen": k.first_seen,
     }
 
@@ -33,7 +35,7 @@ def list_keywords(
     q: str | None = None, country: str | None = None,
     min_demand: float | None = None, max_competition: float | None = None,
     min_opportunity: float | None = None, min_young_share: float | None = None,
-    max_brand_share: float | None = None, analyzed: bool = True,
+    max_brand_share: float | None = None, min_games_share: float | None = None, analyzed: bool = True,
     sort: str = "opportunity", dir: str = "desc", page: int = 1, page_size: int = Query(50, le=200),
     ctx: Ctx = Depends(feature("keywords")), db: Session = Depends(get_db),
 ):
@@ -52,6 +54,8 @@ def list_keywords(
         conds.append(Keyword.young_share >= min_young_share)
     if max_brand_share is not None:
         conds.append(Keyword.brand_share <= max_brand_share)
+    if min_games_share is not None:
+        conds.append(Keyword.games_share >= min_games_share)
     if analyzed:
         conds.append(Keyword.analyzed_at.is_not(None))
     col = SORTS.get(sort, Keyword.opportunity)
@@ -61,6 +65,14 @@ def list_keywords(
     rows = db.scalars(stmt.order_by(order.nulls_last(), Keyword.id)
                       .offset((max(page, 1) - 1) * page_size).limit(page_size)).all()
     return {"total": total, "page": page, "page_size": page_size, "items": [kw_payload(k) for k in rows]}
+
+
+@router.get("/keyword-markets")
+def keyword_markets(ctx: Ctx = Depends(feature("keywords")), db: Session = Depends(get_db)):
+    counts = dict(db.execute(select(Keyword.country, func.count(Keyword.id))
+                             .where(Keyword.analyzed_at.is_not(None)).group_by(Keyword.country)).all())
+    return [{"country": m.country, "lang": m.lang, "label": m.label, "analyzed": counts.get(m.country, 0)}
+            for m in MARKETS]
 
 
 @router.get("/keywords/{keyword_id}")
