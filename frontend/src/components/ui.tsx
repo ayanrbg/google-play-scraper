@@ -73,10 +73,17 @@ export function Sparkline({ data, width = 110, height = 28 }: { data: (number | 
   );
 }
 
-export function Flags({ flags, prereg, age }: { flags: string[]; prereg?: boolean; age?: number | null }) {
+export function Flags({ flags, prereg, age, softLaunch }: {
+  flags: string[]; prereg?: boolean; age?: number | null; softLaunch?: string[] | null;
+}) {
   return (
     <>
       {prereg && <span className="flag prereg">пре-рег</span>}
+      {softLaunch && softLaunch.length > 0 && (
+        <span className="flag soft" title={`До глобального запуска тестировалась в: ${softLaunch.map((c) => c.toUpperCase()).join(", ")}. Возраст считается с глобального запуска.`}>
+          софт-лонч
+        </span>
+      )}
       {age !== null && age !== undefined && age <= 14 && !prereg && <span className="flag new">новинка</span>}
       {flags.map((f) => (
         <span key={f} className={`flag ${f}`}>

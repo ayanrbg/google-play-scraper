@@ -42,6 +42,10 @@ class App(Base):
     contains_ads: Mapped[bool] = mapped_column(Boolean, default=False)
     offers_iap: Mapped[bool] = mapped_column(Boolean, default=False)
     pre_register: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Available in soft-launch markets before the global "released" date (None = not checked yet).
+    # Google hides the release date in countries where the game was out earlier.
+    soft_launch: Mapped[bool | None] = mapped_column(Boolean)
+    soft_launch_markets: Mapped[list | None] = mapped_column(JSON)
 
     # Latest values (global: Google Play reports installs worldwide, not per country)
     real_installs: Mapped[int | None] = mapped_column(BigInteger)

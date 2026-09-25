@@ -157,8 +157,9 @@ def run(today: date | None = None):
             age = (today - a.released).days if a.released else None
             installs = a.real_installs
             v_life = (installs / max(age, 1)) if (installs is not None and age is not None and not a.pre_register) else None
-            # Not enough history for a 7-day window yet (just discovered): use lifetime average.
-            v_eff = v7 if v7 is not None else v_life
+            # Not enough history for a 7-day window yet (just discovered): use lifetime average -
+            # except after a soft launch, where installs predate the global release date.
+            v_eff = v7 if v7 is not None else (None if a.soft_launch else v_life)
 
             cn = charts_now.get(a.app_id, {})
             new_c, top_c = cn.get("top_new_free", 0), cn.get("top_free", 0)

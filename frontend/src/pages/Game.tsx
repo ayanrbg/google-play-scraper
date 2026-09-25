@@ -69,8 +69,15 @@ export default function GamePage() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1>{app.title}</h1>
           <div className="muted" style={{ marginBottom: 8 }}>
-            {app.developer} · {app.genre} · <Flags flags={m?.brand_flags || []} prereg={app.pre_register} age={m?.age_days} />
+            {app.developer} · {app.genre} · <Flags flags={m?.brand_flags || []} prereg={app.pre_register} age={app.soft_launch ? null : m?.age_days} softLaunch={app.soft_launch_markets} />
           </div>
+          {app.soft_launch && (
+            <div className="banner info" style={{ margin: "0 0 10px", fontSize: 13 }}>
+              <b>Была в софт-лонче</b> ({app.soft_launch_markets.map((c: string) => c.toUpperCase()).join(", ")}) до глобального запуска {fmtDate(app.released)}.
+              Возраст считается с глобального запуска, а установки включают софт-лонч. Скорость показываем только реальную, по нашим замерам.
+              Прошедший софт-лонч — хороший знак: издатель проверил метрики и масштабирует игру.
+            </div>
+          )}
           <div className="row" style={{ flexWrap: "wrap" }}>
             <a className="btn sm primary" href={storeUrl(app.app_id)} target="_blank" rel="noreferrer">
               Открыть в Google Play ↗
@@ -93,7 +100,7 @@ export default function GamePage() {
         <Stat label="Установки" value={fmtN(app.installs)} note={app.pre_register ? "пре-регистраций" : fmtFull(app.installs)} />
         <Stat label="В день (7 дн)" value={fmtN(m?.v7)} note={m?.v7_prev ? `неделей раньше ${fmtN(m.v7_prev)}` : "история копится"} />
         <Stat label="Ускорение" value={fmtAccel(m?.accel)} />
-        <Stat label="Возраст" value={app.pre_register ? "пре-рег" : fmtAge(m?.age_days)} note={fmtDate(app.released)} />
+        <Stat label={app.soft_launch ? "С глобального запуска" : "Возраст"} value={app.pre_register ? "пре-рег" : fmtAge(m?.age_days)} note={fmtDate(app.released)} />
         <Stat label="Рейтинг" value={fmtRating(app.rating)} note={`${fmtN(app.ratings)} оценок`} />
         <Stat label="Страны в чартах" value={(m?.new_countries || 0) + (m?.top_countries || 0)} note={m?.trending_countries ? `Movers: ${m.trending_countries}` : undefined} />
       </div>

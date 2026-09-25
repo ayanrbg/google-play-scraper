@@ -51,6 +51,7 @@ class GameFilters:
         max_dev_installs: int | None = None,
         ads: str | None = None, iap: str | None = None,           # yes | no
         prereg: str = "include",                                   # include | only | exclude
+        soft_launch: str = "include",                              # include | only | exclude
         charts: str | None = None,                                 # top_new | trending | any
         marks: str = "hide_rejected",                              # all | hide_rejected | interesting | in_work | rejected | unmarked
         sort: str = "trend_score", dir: str = "desc",
@@ -108,6 +109,10 @@ def build_query(f: GameFilters, ctx: Ctx):
         conds.append(App.pre_register.is_(True))
     elif f.prereg == "exclude":
         conds.append(App.pre_register.is_(False))
+    if f.soft_launch == "only":
+        conds.append(App.soft_launch.is_(True))
+    elif f.soft_launch == "exclude":
+        conds.append(or_(App.soft_launch.is_(None), App.soft_launch.is_(False)))
     if f.charts == "top_new":
         conds.append(GameMetrics.new_countries > 0)
     elif f.charts == "trending":
@@ -133,6 +138,7 @@ def row_payload(app: App, m: GameMetrics, mark_status, mark_note) -> dict:
         "app_id": app.app_id, "title": app.title, "developer": app.developer, "developer_id": app.developer_id,
         "icon_url": app.icon_url, "genre_id": app.genre_id, "genre": GENRE_NAMES_RU.get(app.genre_id or "", app.genre_id),
         "released": app.released, "age_days": m.age_days, "pre_register": app.pre_register,
+        "soft_launch": bool(app.soft_launch), "soft_launch_markets": app.soft_launch_markets or [],
         "installs": m.installs, "v7": m.v7, "v7_prev": m.v7_prev, "accel": m.accel, "v_life": m.v_life,
         "rating": app.score, "ratings": app.ratings,
         "new_countries": m.new_countries, "top_countries": m.top_countries,
@@ -235,6 +241,7 @@ def game_detail(app_id: str, ctx: Ctx = Depends(current), db: Session = Depends(
             "last_updated": app.last_updated, "version": app.version, "content_rating": app.content_rating,
             "free": app.free, "price": app.price, "contains_ads": app.contains_ads, "offers_iap": app.offers_iap,
             "pre_register": app.pre_register, "installs": app.real_installs, "min_installs": app.min_installs,
+            "soft_launch": bool(app.soft_launch), "soft_launch_markets": app.soft_launch_markets or [],
             "ratings": app.ratings, "reviews": app.reviews, "rating": app.score, "tracked": app.tracked,
             "first_seen": app.first_seen, "discovered_via": app.discovered_via,
             "url": f"https://play.google.com/store/apps/details?id={app.app_id}",

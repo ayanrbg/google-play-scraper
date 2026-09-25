@@ -52,6 +52,8 @@ export type Game = {
   released: string | null;
   age_days: number | null;
   pre_register: boolean;
+  soft_launch: boolean;
+  soft_launch_markets: string[];
   installs: number | null;
   v7: number | null;
   v7_prev: number | null;

@@ -150,3 +150,24 @@ def test_proxy_routes(caplog):
         assert rs[0].bench_until == 0                   # the server itself is never benched
     finally:
         http._routes = None
+
+
+def test_soft_launch_markets(monkeypatch):
+    """Google hides the release date where a game was out before its global launch."""
+    from gpi.play import client
+
+    class R:
+        def __init__(self, text): self.text = text
+
+    pages = {"ph": {"released": None, "installs": "1,000,000+"},   # soft launch here
+             "id": {"released": None, "installs": "1,000,000+"},
+             "au": {"released": "Sep 16, 2026", "installs": "1,000,000+"},
+             "nz": None}                                             # not available at all
+    def fake_request(method, url, **kw):
+        cc = url.rsplit("gl=", 1)[1]
+        if pages[cc] is None:
+            raise client.NotFound(url)
+        return R(cc)
+    monkeypatch.setattr(client, "request", fake_request)
+    monkeypatch.setattr(client, "gps_parse_dom", lambda dom, app_id, url: pages[dom])
+    assert client.soft_launch_markets("x") == ["ph", "id"]

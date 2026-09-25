@@ -10,7 +10,7 @@ import { fmtAccel, fmtAge, fmtN, fmtRating } from "../format";
 export const GAME_DEFAULTS: Record<string, string> = {
   q: "", genres: "", max_age: "180", min_v7: "", min_accel: "", min_trend: "", min_installs: "", max_installs: "",
   min_rating: "", min_countries: "", min_search: "", hide_flags: "major,hc_publisher,franchise", max_dev_installs: "",
-  ads: "", iap: "", prereg: "include", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
+  ads: "", iap: "", prereg: "include", soft_launch: "include", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
 };
 
 const GENRES: [string, string][] = [
@@ -180,6 +180,13 @@ export default function Radar() {
               onChange={(v) => f.set({ prereg: v })}
             />
           </FGroup>
+          <FGroup title="Софт-лонч" hint="тест в части стран до релиза">
+            <Seg
+              options={[["include", "Все"], ["only", "Только"], ["exclude", "Без"]]}
+              value={f.get("soft_launch")}
+              onChange={(v) => f.set({ soft_launch: v })}
+            />
+          </FGroup>
           <FGroup title="Отметки команды">
             <Seg
               options={[["hide_rejected", "Без отброш."], ["interesting", "★"], ["in_work", "В работе"], ["unmarked", "Новые"], ["all", "Все"]]}
@@ -254,7 +261,7 @@ export default function Radar() {
                             <div className="app-dev">
                               {g.developer}
                               {" "}
-                              <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.age_days} />
+                              <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch ? null : g.age_days} softLaunch={g.soft_launch_markets} />
                             </div>
                           </div>
                         </div>
@@ -265,7 +272,16 @@ export default function Radar() {
                       <td className="muted">{g.genre}</td>
                       <td className="r num">{g.pre_register ? <span className="accent">скоро</span> : fmtAge(g.age_days)}</td>
                       <td className="r num">{fmtN(g.installs)}</td>
-                      <td className="r num" title={g.score_parts?.estimated ? "Оценка по среднему за жизнь: истории пока мало" : ""}>
+                      <td
+                        className="r num"
+                        title={
+                          g.soft_launch && g.v7 === null
+                            ? "Установки включают месяцы софт-лонча, поэтому среднее не считаем — ждём реальную скорость за несколько дней"
+                            : g.score_parts?.estimated
+                              ? "Оценка: установки ÷ возраст. Реальная скорость появится после нескольких дней наблюдений"
+                              : "Реальная скорость за 7 дней"
+                        }
+                      >
                         {g.score_parts?.estimated ? <span className="faint">~</span> : null}
                         {fmtN(g.v7)}
                       </td>

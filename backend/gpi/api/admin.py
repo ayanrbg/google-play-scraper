@@ -15,7 +15,7 @@ from gpi.settings import get_settings
 router = APIRouter(prefix="/api")
 
 
-JOBS = ["daily", "charts", "expand", "enrich", "track", "metrics", "keywords"]
+JOBS = ["daily", "charts", "expand", "enrich", "track", "metrics", "keywords", "softlaunch"]
 
 
 def run_payload(r: JobRun, with_error: bool) -> dict:

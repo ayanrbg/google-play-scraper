@@ -76,6 +76,7 @@ def jobs():
         "metrics": metrics.run,
         "keywords": keywords.run,
         "cleanup": cleanup,
+        "softlaunch": details.backfill_soft_launch,
     }
 
 
@@ -186,6 +187,8 @@ def main(argv=None):
     elif args.cmd == "worker":
         worker()
     elif args.cmd == "run":
+        from gpi.pipeline.common import install_db_logging
+        install_db_logging()
         registry = jobs()
         for name in args.jobs:
             if name not in registry:

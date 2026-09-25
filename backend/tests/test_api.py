@@ -159,3 +159,19 @@ def test_daily_steps_progress_and_logs(client, monkeypatch):
     assert any("суточный прогон завершён" in l["message"] for l in logs)
     warn = client.get("/api/logs", params={"level": "warning"}).json()
     assert all(l["level"] in ("WARNING", "ERROR", "CRITICAL") for l in warn) and warn
+
+
+def test_soft_launch_games_get_no_lifetime_estimate(client):
+    add_game("soft.game", "Last Echo", "Glaciers", 8, [1_155_000], charts={"top_new_free": 2})
+    add_game("fresh.game", "Real New", "Indie", 8, [800_000], charts={"top_new_free": 2})
+    with session_scope() as s:
+        g = s.get(App, "soft.game")
+        g.soft_launch, g.soft_launch_markets = True, ["ph", "id"]
+    metrics.run(TODAY)
+    items = {g["app_id"]: g for g in client.get("/api/games").json()["items"]}
+    # installs include the soft-launch months, so installs/age would be wildly inflated
+    assert items["soft.game"]["v7"] is None and items["soft.game"]["soft_launch"] is True
+    assert items["fresh.game"]["v7"] == 100_000
+    only = client.get("/api/games", params={"soft_launch": "only"}).json()["items"]
+    assert [g["app_id"] for g in only] == ["soft.game"]
+    assert client.get("/api/games/soft.game").json()["app"]["soft_launch_markets"] == ["ph", "id"]

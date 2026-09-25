@@ -116,6 +116,25 @@ def details(app_id: str) -> dict:
     return normalize_details(gps_parse_dom(dom=html, app_id=app_id, url=url))
 
 
+# Classic soft-launch markets. Google shows no release date there for a game that was
+# available in that country before its global launch.
+SOFT_LAUNCH_MARKETS = ["ph", "id", "au", "nz"]
+
+
+def soft_launch_markets(app_id: str) -> list[str]:
+    """Markets where the page has no release date although the game is out: soft launch there."""
+    found = []
+    for cc in SOFT_LAUNCH_MARKETS:
+        url = f"{BASE}/store/apps/details?id={app_id}&hl=en&gl={cc}"
+        try:
+            raw = gps_parse_dom(dom=request("GET", url).text, app_id=app_id, url=url)
+        except NotFound:
+            continue  # not available in that country at all
+        if not raw.get("released") and raw.get("installs"):
+            found.append(cc)
+    return found
+
+
 def normalize_details(raw: dict) -> dict:
     released = _parse_date(raw.get("released"))
     installs_text = raw.get("installs")

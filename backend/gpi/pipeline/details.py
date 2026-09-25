@@ -30,18 +30,35 @@ def should_track(d: dict, today: date) -> bool:
     return released is not None and (today - released).days <= get_settings().track_max_age_days
 
 
-def _fetch(app_id: str):
+SOFT_LAUNCH_CHECK_DAYS = 180   # only young games need it; older ones are judged by real velocity
+
+
+def _fetch(app_id: str, check_soft_launch: bool = False):
     try:
-        return client.details(app_id)
+        d = client.details(app_id)
     except NotFound:
         return "not_found"
+    released = d.get("released")
+    if (check_soft_launch and d.get("is_game") and released and not d.get("pre_register")
+            and (date.today() - released).days <= SOFT_LAUNCH_CHECK_DAYS):
+        try:
+            markets = client.soft_launch_markets(app_id)
+            d["soft_launch"], d["soft_launch_markets"] = bool(markets), markets
+        except Exception as e:  # the card itself is fine; retry the check next time
+            log.debug("soft launch check %s failed: %s", app_id, e)
+    return d
 
 
 def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
     """Fetch cards for app_ids, update apps, write today's snapshot for tracked games."""
     today = date.today()
     now = datetime.utcnow()
-    ok = missing = failed = tracked_new = 0
+    ok = missing = failed = tracked_new = soft = 0
+    with session_scope() as s:
+        unchecked = set()
+        for i in range(0, len(app_ids), 5000):
+            unchecked |= set(s.scalars(select(App.app_id).where(
+                App.app_id.in_(app_ids[i:i + 5000]), App.soft_launch.is_(None))).all())
     batch_apps, batch_snaps, gone = [], [], []
 
     def flush():
@@ -56,7 +73,7 @@ def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
                           .values(status="removed", tracked=False))
         batch_apps.clear(); batch_snaps.clear(); gone.clear()
 
-    for app_id, d, err in parallel(_fetch, app_ids, label=label):
+    for app_id, d, err in parallel(lambda a: _fetch(a, a in unchecked), app_ids, label=label):
         if err is not None:
             failed += 1
             log.debug("details %s failed: %s", app_id, err)
@@ -67,6 +84,9 @@ def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
             continue
         row = {k: d.get(k) for k in APP_FIELDS}
         row.update(app_id_key=app_id, details_at=now, error_count=0, status="active")
+        if "soft_launch" in d:
+            row.update(soft_launch=d["soft_launch"], soft_launch_markets=d["soft_launch_markets"])
+            soft += int(d["soft_launch"])
         track = should_track(d, today)
         if set_tracked:
             row["tracked"] = track
@@ -79,7 +99,7 @@ def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
         if len(batch_apps) >= 200:
             flush()
     flush()
-    return {"ok": ok, "missing": missing, "failed": failed, "tracked": tracked_new}
+    return {"ok": ok, "missing": missing, "failed": failed, "tracked": tracked_new, "soft_launch": soft}
 
 
 def enrich():
@@ -103,6 +123,37 @@ def track():
             )).all()
         stats.update(candidates=len(ids), **refresh(list(ids), "track", set_tracked=False))
         stats["untracked"] = untrack_stale(today, cfg.track_max_age_days, cfg.untrack_after_days)
+    return stats
+
+
+def backfill_soft_launch():
+    """One pass over tracked young games that were never checked for a soft launch."""
+    cutoff = date.today() - timedelta(days=SOFT_LAUNCH_CHECK_DAYS)
+    with job_run("softlaunch") as stats:
+        with session_scope() as s:
+            ids = s.scalars(select(App.app_id).where(
+                App.tracked.is_(True), App.soft_launch.is_(None), App.pre_register.is_(False),
+                App.released >= cutoff)).all()
+        found = checked = 0
+        batch = []
+
+        def flush():
+            with session_scope() as s:
+                for app_id, markets in batch:
+                    s.execute(update(App).where(App.app_id == app_id)
+                              .values(soft_launch=bool(markets), soft_launch_markets=markets))
+            batch.clear()
+
+        for app_id, markets, err in parallel(client.soft_launch_markets, list(ids), label="softlaunch"):
+            if err is not None:
+                continue
+            checked += 1
+            found += int(bool(markets))
+            batch.append((app_id, markets))
+            if len(batch) >= 200:
+                flush()
+        flush()
+        stats.update(candidates=len(ids), checked=checked, soft_launch=found)
     return stats
 
 
