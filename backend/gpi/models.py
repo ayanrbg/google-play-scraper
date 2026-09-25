@@ -152,6 +152,7 @@ class GameMetrics(Base):
     flag_franchise: Mapped[bool] = mapped_column(Boolean, default=False)
     flag_big_dev: Mapped[bool] = mapped_column(Boolean, default=False)
     flag_big_portfolio: Mapped[bool] = mapped_column(Boolean, default=False)
+    flag_cash: Mapped[bool] = mapped_column(Boolean, default=False)
     revival: Mapped[bool] = mapped_column(Boolean, default=False)
     # Young, not a brand, growing - yet barely visible in charts: what manual browsing misses
     hidden_gem: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

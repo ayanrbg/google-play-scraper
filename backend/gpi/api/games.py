@@ -31,7 +31,7 @@ SORTS = {
 FLAG_COLUMNS = {
     "major": GameMetrics.flag_major, "hc_publisher": GameMetrics.flag_hc_publisher,
     "franchise": GameMetrics.flag_franchise, "big_dev": GameMetrics.flag_big_dev,
-    "big_portfolio": GameMetrics.flag_big_portfolio,
+    "big_portfolio": GameMetrics.flag_big_portfolio, "cash": GameMetrics.flag_cash,
 }
 
 
@@ -47,7 +47,7 @@ class GameFilters:
         min_v7: float | None = None, min_accel: float | None = None,
         min_trend: float | None = None, min_rating: float | None = None,
         min_countries: int | None = None, min_search: float | None = None,
-        hide_flags: str | None = Query("major,hc_publisher,franchise", description="comma-separated brand flags"),
+        hide_flags: str | None = Query("major,hc_publisher,franchise,cash", description="comma-separated brand flags"),
         max_dev_installs: int | None = None,
         ads: str | None = None, iap: str | None = None,           # yes | no
         prereg: str = "include",                                   # include | only | exclude

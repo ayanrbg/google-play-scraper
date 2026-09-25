@@ -10,6 +10,8 @@ const KIND_LABELS: Record<string, string> = {
   major: "Крупные издатели",
   hc_publisher: "Паблишеры гиперказуала",
   franchise: "Франшизы (слово в названии)",
+  cash: "На деньги: слово в названии",
+  cash_text: "На деньги: фраза в названии или описании",
 };
 
 export default function Settings() {
@@ -156,10 +158,10 @@ function Brands() {
             if (pattern.trim()) add.mutate();
           }}
         >
-          <div style={{ width: 420 }}>
+          <div style={{ width: 640 }}>
             <Seg options={Object.entries(KIND_LABELS) as [string, string][]} value={kind} onChange={setKind} />
           </div>
-          <input className="input grow" placeholder={kind === "franchise" ? "слово в названии игры" : "часть имени разработчика"} value={pattern} onChange={(e) => setPattern(e.target.value)} />
+          <input className="input grow" placeholder={kind === "franchise" || kind === "cash" ? "слово в названии игры" : kind === "cash_text" ? "фраза, например cash out" : "часть имени разработчика"} value={pattern} onChange={(e) => setPattern(e.target.value)} />
           <button className="btn primary">Добавить</button>
         </form>
       )}

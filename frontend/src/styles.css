@@ -262,6 +262,7 @@ table.data tbody tr { animation: rowIn .35s both; }
 
 .flag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 4px; font-size: 10.5px; font-family: var(--font-mono); letter-spacing: .02em; border: 1px solid; margin-right: 4px; }
 .flag.major, .flag.franchise { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.flag.cash { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); border-style: dashed; }
 .flag.hc_publisher { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .flag.big_dev, .flag.big_portfolio { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); }
 .flag.prereg { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }

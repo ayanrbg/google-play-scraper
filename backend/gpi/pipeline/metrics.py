@@ -28,7 +28,7 @@ GEM_MIN_VELOCITY = 1000        # installs/day
 GEM_MIN_INSTALLS = 50_000
 GEM_MAX_CHART_COUNTRIES = 5    # charts in at most this many of our 60 countries...
 GEM_MIN_BEST_RANK = 30         # ...and never high: best position below #30
-BRAND = {"major", "hc_publisher", "franchise"}
+BRAND = {"major", "hc_publisher", "franchise", "cash"}
 
 
 def is_hidden_gem(age, v, installs, flags, chart_countries, best_any_rank, revival) -> bool:
@@ -192,7 +192,7 @@ def run(today: date | None = None):
             dev = devs.get(a.developer_id)
             dev_other_max = others[0][0] if others else None
             dev_count = dev.app_count if dev else None
-            flags = brand.classify(a.title, a.developer, a.developer_id, dev_other_max, dev_count, rules)
+            flags = brand.classify(a.title, a.developer, a.developer_id, dev_other_max, dev_count, rules, a.summary)
 
             total, parts = trend_score(age, v_eff, accel, new_c, top_c, trending_c, a.score, a.ratings)
             parts["estimated"] = v7 is None and v_eff is not None

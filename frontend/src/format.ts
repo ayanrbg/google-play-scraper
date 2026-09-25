@@ -54,6 +54,7 @@ export const FLAG_SHORT: Record<string, string> = {
   franchise: "бренд",
   big_dev: "студия 50M+",
   big_portfolio: "40+ игр",
+  cash: "на деньги",
 };
 
 export const MARK_LABELS: Record<string, string> = {

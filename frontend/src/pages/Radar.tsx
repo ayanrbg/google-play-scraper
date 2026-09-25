@@ -9,7 +9,7 @@ import { fmtAccel, fmtAge, fmtN, fmtRating } from "../format";
 
 export const GAME_DEFAULTS: Record<string, string> = {
   q: "", genres: "", max_age: "180", min_v7: "", min_accel: "", min_trend: "", min_installs: "", max_installs: "",
-  min_rating: "", min_countries: "", min_search: "", hide_flags: "major,hc_publisher,franchise", max_dev_installs: "",
+  min_rating: "", min_countries: "", min_search: "", hide_flags: "major,hc_publisher,franchise,cash", max_dev_installs: "",
   ads: "", iap: "", prereg: "include", soft_launch: "include", revival: "include", hidden: "", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
 };
 
@@ -33,6 +33,7 @@ const FLAG_OPTIONS: [string, string, string][] = [
   ["major", "Крупные издатели", "Tencent, Playrix, Ubisoft…"],
   ["hc_publisher", "Паблишеры гиперказуала", "Voodoo, SayGames, Azur — рост на закупке"],
   ["franchise", "Франшизы и бренды", "Marvel, Pokémon, Subway Surfers…"],
+  ["cash", "Игры на деньги", "cash out, призы, PayPal — рост на обещании выплат"],
   ["big_dev", "Студии с хитом 50M+", "уже есть аудитория"],
   ["big_portfolio", "Портфель 40+ игр", "фабрики приложений"],
 ];

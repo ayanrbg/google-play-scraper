@@ -215,3 +215,18 @@ def test_games_share_backfill_from_stored_ranks():
     with session_scope() as s:
         k = s.get(Keyword, 1)
         assert k.games_share == 0.3 and k.opportunity < 60
+
+
+def test_cash_games_flag():
+    from gpi.db import session_scope
+    with session_scope() as s:
+        rules = brand.Rules.load(s)
+    cls = lambda title, summary=None: "cash" in brand.classify(title, "Dev", None, None, None, rules, summary)
+    assert cls("Sheep Escape: Tap Money")
+    assert cls("Word Connect - Cash Prizes")
+    assert cls("Match Quest: Win Rewards")
+    assert cls("Bubble Pop", "Play and cash out to PayPal every day!")
+    # fake in-game money is not a cash game
+    assert not cls("Idle Money Tycoon", "Earn cash to upgrade your bank empire")
+    assert not cls("Supermarket Cashier Simulator")
+    assert not cls("Daily Rewards Puzzle", "Collect rewards every day")

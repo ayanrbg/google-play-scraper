@@ -21,7 +21,9 @@ FLAG_LABELS = {
     "franchise": "Франшиза / бренд",
     "big_dev": "У студии уже есть хит 50M+",
     "big_portfolio": "Большой портфель (40+ приложений)",
+    "cash": "Игра на деньги (выплаты, призы)",
 }
+RULE_KINDS = ["major", "hc_publisher", "franchise", "cash", "cash_text"]
 
 DEFAULT_RULES: dict[str, list[str]] = {
     "major": [
@@ -75,7 +77,25 @@ DEFAULT_RULES: dict[str, list[str]] = {
         "Diablo", "Hearthstone", "Warcraft", "StarCraft", "Mobile Legends", "Honor of Kings",
         "Toca Boca", "My Talking", "Hatsune Miku",
     ],
+    # "Play and get paid" games: growth is bought with payout promises, not an idea signal.
+    # Matched as whole words in the title.
+    "cash": [
+        "cash", "prize", "prizes", "paypal", "earn", "payout", "giveaway", "sweepstakes",
+        "tap money", "win money", "real money", "free money", "money rewards", "win rewards",
+        "earn rewards", "get rewards", "dinheiro", "dinero", "uang", "деньги", "para kazan",
+    ],
+    # Matched in the title or the short description: only unambiguous phrases, because
+    # tycoon games say "earn cash to upgrade" and are not cash games.
+    "cash_text": [
+        "real money", "real cash", "win real", "cash out", "cashout", "cash prizes", "cash prize",
+        "paypal", "gift card", "gift cards", "withdraw", "withdrawal", "get paid", "earn money online",
+        "make money", "dinheiro real", "dinero real", "uang asli", "saldo dana",
+    ],
 }
+
+
+def _words(patterns: list[str]) -> list[re.Pattern]:
+    return [re.compile(r"(?<![\w])" + re.escape(p) + r"(?![\w])", re.IGNORECASE) for p in patterns]
 
 
 @dataclass
@@ -83,18 +103,21 @@ class Rules:
     major: list[str]
     hc_publisher: list[str]
     franchise: list[re.Pattern]
+    cash_title: list[re.Pattern]
+    cash_text: list[re.Pattern]
 
     @classmethod
     def load(cls, session) -> "Rules":
         rows = session.execute(select(BrandRule.kind, BrandRule.pattern)).all()
-        by_kind: dict[str, list[str]] = {"major": [], "hc_publisher": [], "franchise": []}
+        by_kind: dict[str, list[str]] = {k: [] for k in RULE_KINDS}
         for kind, pattern in rows:
             by_kind.setdefault(kind, []).append(pattern)
         return cls(
             major=[p.lower() for p in by_kind["major"]],
             hc_publisher=[p.lower() for p in by_kind["hc_publisher"]],
-            franchise=[re.compile(r"(?<![\w])" + re.escape(p) + r"(?![\w])", re.IGNORECASE)
-                       for p in by_kind["franchise"]],
+            franchise=_words(by_kind["franchise"]),
+            cash_title=_words(by_kind["cash"]),
+            cash_text=_words(by_kind["cash_text"]),
         )
 
 
@@ -113,7 +136,8 @@ def _dev_match(developer: str | None, developer_id: str | None, patterns: list[s
 
 
 def classify(title: str | None, developer: str | None, developer_id: str | None,
-             dev_other_max_installs: int | None, dev_app_count: int | None, rules: Rules) -> list[str]:
+             dev_other_max_installs: int | None, dev_app_count: int | None, rules: Rules,
+             summary: str | None = None) -> list[str]:
     flags = []
     if _dev_match(developer, developer_id, rules.major):
         flags.append("major")
@@ -125,6 +149,9 @@ def classify(title: str | None, developer: str | None, developer_id: str | None,
         flags.append("big_dev")
     if dev_app_count and dev_app_count >= BIG_PORTFOLIO:
         flags.append("big_portfolio")
+    text = f"{title or ''}\n{summary or ''}"
+    if (title and any(p.search(title) for p in rules.cash_title)) or any(p.search(text) for p in rules.cash_text):
+        flags.append("cash")
     return flags
 
 

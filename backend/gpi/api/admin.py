@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from gpi.api.deps import Ctx, current, get_db, superadmin
 from gpi.models import App, BrandRule, ChartDaily, GameMetrics, JobRun, Keyword, LogEntry, Snapshot, User, Workspace
+from gpi.pipeline.brand import RULE_KINDS
 from gpi.plans import PLANS
 from gpi.settings import get_settings
 
@@ -116,7 +117,7 @@ def list_rules(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
 
 @router.post("/brand-rules")
 def add_rule(body: RuleIn, ctx: Ctx = Depends(superadmin), db: Session = Depends(get_db)):
-    if body.kind not in ("major", "hc_publisher", "franchise"):
+    if body.kind not in RULE_KINDS:
         raise HTTPException(400, "bad_kind")
     pattern = body.pattern.strip()
     if db.scalar(select(BrandRule.id).where(BrandRule.kind == body.kind, BrandRule.pattern == pattern)):
