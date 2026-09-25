@@ -3,24 +3,23 @@
 - charts():   real top charts via the internal batchexecute RPC (vyAe2), 200 per chart.
               Request template adapted from facundoolano/google-play-scraper (MIT).
 - suggest():  search autocomplete (IJ4APc) - our demand signal for keywords.
-- details():  full app card via google-play-scraper.
-- search():   search results via google-play-scraper.
+- details():  app page fetched by us (gzip, proxies), parsed by google-play-scraper.
+- search():   search page fetched by us (proxies), parsed like google-play-scraper.
 - page links: similar games, developer portfolio, pre-registration collection (HTML).
 """
 
 import json
 import re
-import time
 import urllib.parse
 from datetime import date, datetime
 from pathlib import Path
 
-from google_play_scraper import search as gps_search
+from google_play_scraper.constants.element import ElementSpecs
+from google_play_scraper.constants.regex import Regex
 from google_play_scraper.constants.request import Formats
-from google_play_scraper.exceptions import NotFoundError
 from google_play_scraper.features.app import parse_dom as gps_parse_dom
 
-from gpi.play.http import NotFound, note_throttled, request, routes, throttle
+from gpi.play.http import NotFound, request
 
 BASE = "https://play.google.com"
 _LIST_BODY = (Path(__file__).parent / "_list_body.txt").read_text(encoding="utf-8").strip()
@@ -91,26 +90,6 @@ def suggest(term: str, lang: str = "en", country: str = "us") -> list[str]:
 
 # ----------------------------- details / search -----------------------------
 
-def _call_gps(fn, *args, **kwargs):
-    last = None
-    for attempt in range(4):
-        throttle()
-        try:
-            return fn(*args, **kwargs)
-        except NotFoundError:
-            raise NotFound(args[0] if args else "")
-        except Exception as e:  # google-play-scraper surfaces HTTP errors as generic exceptions
-            last = e
-            msg = str(e)
-            if "429" in msg or "503" in msg:
-                direct = routes()[0]
-                direct.limiter.back_off(30 * (attempt + 1))
-                note_throttled(direct, "429", 30 * (attempt + 1))
-            else:
-                time.sleep(2 ** attempt)
-    raise last
-
-
 def _parse_date(text) -> date | None:
     if not text:
         return None
@@ -172,9 +151,16 @@ def normalize_details(raw: dict) -> dict:
 
 
 def search(term: str, lang: str = "en", country: str = "us", n: int = 20) -> list[dict]:
-    results = _call_gps(gps_search, term, lang=lang, country=country, n_hits=n)
+    """Search results page, fetched through the route pool (proxies) and parsed like
+    google-play-scraper does. The search page is the one Google throttles first."""
+    q = urllib.parse.quote(term)
+    url = Formats.Searchresults.build(query=q, lang=lang, country=country)
+    try:
+        dom = request("GET", url).text
+    except NotFound:
+        dom = request("GET", Formats.Searchresults.fallback_build(query=q, lang=lang)).text
     out = []
-    for rank, r in enumerate(results or [], 1):
+    for rank, r in enumerate(parse_search(dom, n), 1):
         if not r.get("appId"):
             continue
         out.append({
@@ -187,6 +173,34 @@ def search(term: str, lang: str = "en", country: str = "us", n: int = 20) -> lis
             "rank": rank,
         })
     return out
+
+
+def parse_search(dom: str, n_hits: int) -> list[dict]:
+    """Same extraction as google_play_scraper.features.search, minus its own HTTP call."""
+    dataset = {}
+    for match in Regex.SCRIPT.findall(dom):
+        key, value = Regex.KEY.findall(match), Regex.VALUE.findall(match)
+        if key and value:
+            dataset[key[0]] = json.loads(value[0])
+    if "ds:4" not in dataset:
+        return []
+    try:
+        top_result = dataset["ds:4"][0][1][0][23][16]
+    except (IndexError, TypeError):
+        top_result = None
+    apps = None
+    for block in dataset["ds:4"][0][1]:
+        try:
+            apps = block[22][0]
+        except (IndexError, TypeError):
+            continue
+    if apps is None:
+        return []
+    results = ([{k: spec.extract_content(top_result) for k, spec in ElementSpecs.SearchResultOnTop.items()}]
+               if top_result else [])
+    for i in range(min(len(apps), n_hits) - len(results)):
+        results.append({k: spec.extract_content(apps[i]) for k, spec in ElementSpecs.SearchResult.items()})
+    return results
 
 
 def _parse_installs(text) -> int | None:
