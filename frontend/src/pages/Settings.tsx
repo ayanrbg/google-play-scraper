@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
-import { useMe } from "../App";
+import { useUser } from "../App";
 import { Seg } from "../components/filters";
 import { Loader } from "../components/ui";
 import { ERROR_TEXT, fmtDate, fmtDateTime } from "../format";
@@ -15,7 +15,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 export default function Settings() {
-  const me = useMe();
+  const me = useUser();
   const [tab, setTab] = useState("team");
   const tabs: [string, string][] = [["team", "Команда"], ["brands", "Бренд-правила"], ["account", "Аккаунт"]];
   if (me.is_superadmin) tabs.push(["platform", "Платформа"]);
@@ -40,7 +40,7 @@ export default function Settings() {
 }
 
 function Team() {
-  const me = useMe();
+  const me = useUser();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["team"], queryFn: () => api<any>("/team") });
   const [email, setEmail] = useState("");
@@ -127,7 +127,7 @@ function Team() {
 }
 
 function Brands() {
-  const me = useMe();
+  const me = useUser();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["brand-rules"], queryFn: () => api<{ id: number; kind: string; pattern: string; note: string }[]>("/brand-rules") });
   const [kind, setKind] = useState("major");

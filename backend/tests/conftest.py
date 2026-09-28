@@ -20,4 +20,8 @@ def fresh_db():
     from gpi.pipeline.brand import seed_rules
     with session_scope() as s:
         seed_rules(s)
+    # process-wide state of the API: overview cache and per-IP request counters
+    from gpi.api import games, ratelimit
+    games._overview_cache.clear()
+    ratelimit._hits.clear()
     yield

@@ -22,23 +22,45 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
+# The site is public: anonymous visitors read everything with this plan. Signing in only adds
+# what belongs to a team (marks, saved views, settings) and admin tools.
+GUEST_PLAN = "team"
+
+
 @dataclass
 class Ctx:
-    user: User
-    workspace: Workspace
+    user: User | None
+    workspace: Workspace | None
 
     @property
     def plan(self) -> dict:
-        return plan(self.workspace.plan)
+        return plan(self.workspace.plan if self.workspace else GUEST_PLAN)
+
+    @property
+    def workspace_id(self) -> int:
+        """0 for guests: joins against per-workspace tables (marks) then match nothing."""
+        return self.workspace.id if self.workspace else 0
+
+    @property
+    def is_superadmin(self) -> bool:
+        return bool(self.user and self.user.is_superadmin)
 
 
-def current(request: Request, db: Session = Depends(get_db)) -> Ctx:
+def viewer(request: Request, db: Session = Depends(get_db)) -> Ctx:
+    """The signed-in user, or a guest. For read-only endpoints."""
     token = request.cookies.get(COOKIE)
     user_id = read_token(token) if token else None
     user = db.get(User, user_id) if user_id else None
     if not user or not user.is_active:
-        raise HTTPException(401, "not_authenticated")
+        return Ctx(user=None, workspace=None)
     return Ctx(user=user, workspace=db.get(Workspace, user.workspace_id))
+
+
+def current(ctx: Ctx = Depends(viewer)) -> Ctx:
+    """A signed-in user. For anything that writes or is private to a team."""
+    if not ctx.user:
+        raise HTTPException(401, "not_authenticated")
+    return ctx
 
 
 def owner(ctx: Ctx = Depends(current)) -> Ctx:
@@ -54,7 +76,7 @@ def superadmin(ctx: Ctx = Depends(current)) -> Ctx:
 
 
 def feature(name: str):
-    def check(ctx: Ctx = Depends(current)) -> Ctx:
+    def check(ctx: Ctx = Depends(viewer)) -> Ctx:
         if not ctx.plan.get(name):
             raise HTTPException(402, f"plan_feature:{name}")
         return ctx

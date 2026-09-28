@@ -15,7 +15,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <div style={{ position: "relative" }}>
           <h1>Находим игры, которые растут на органике — раньше остальных.</h1>
           <p>
-            Каждый день: топ-чарты 37 стран, свежие релизы, спрос в поиске Google Play. Бренды и закупка трафика отсеяны.
+            Каждый день: топ-чарты 60 стран, свежие релизы, спрос в поиске Google Play. Бренды и закупка трафика отсеяны.
           </p>
         </div>
       </div>
@@ -68,7 +68,7 @@ export default function Login() {
         </button>
       </form>
       <p className="muted" style={{ fontSize: 13, marginTop: 16 }}>
-        Нет аккаунта? <Link className="link" to="/register">Регистрация</Link>
+        Аккаунт не нужен: радар открыт для всех, вход — для команды. <Link className="link" to="/">Открыть радар →</Link>
       </p>
     </AuthLayout>
   );

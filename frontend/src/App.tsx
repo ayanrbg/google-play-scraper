@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, Me, api } from "./api";
 import { Loader, RadarMark } from "./components/ui";
@@ -14,8 +14,12 @@ import Studios from "./pages/Studios";
 import Status from "./pages/Status";
 import Settings from "./pages/Settings";
 
+// The site is public: `null` is a guest who can read everything. Signing in adds team features
+// (marks, saved views, settings) and admin tools.
 const MeContext = createContext<Me | null>(null);
-export const useMe = () => useContext(MeContext)!;
+export const useMe = () => useContext(MeContext);
+/** For pages that exist only for signed-in users (the route sends guests to /login). */
+export const useUser = () => useContext(MeContext)!;
 
 function useTheme() {
   const [theme, setTheme] = useState<string | null>(() => {
@@ -47,10 +51,10 @@ export default function App() {
   if (location.pathname === "/login") return <Login />;
   if (location.pathname === "/register") return <Register />;
   if (me.isLoading) return <Loader />;
-  if (me.error || !me.data) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  const user = me.data ?? null;
 
   return (
-    <MeContext.Provider value={me.data}>
+    <MeContext.Provider value={user}>
       <Shell>
         <Routes>
           <Route path="/" element={<Radar />} />
@@ -60,7 +64,7 @@ export default function App() {
           <Route path="/genres" element={<Genres />} />
           <Route path="/studios" element={<Studios />} />
           <Route path="/status" element={<Status />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings" element={user ? <Settings /> : <Navigate to="/login?next=/settings" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Shell>
@@ -80,7 +84,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await api("/auth/logout", { method: "POST" });
     qc.clear();
-    navigate("/login");
+    navigate("/");
   };
 
   return (
@@ -111,25 +115,35 @@ function Shell({ children }: { children: React.ReactNode }) {
           <NavLink to="/status">
             <span className="nav-dot" /> Данные
           </NavLink>
-          <NavLink to="/settings">
-            <span className="nav-dot" /> Настройки
-          </NavLink>
+          {me && (
+            <NavLink to="/settings">
+              <span className="nav-dot" /> Настройки
+            </NavLink>
+          )}
         </nav>
         <div className="sidebar-foot">
-          <div className="who" title={me.email}>
-            {me.email}
-            <br />
-            <span className="faint">
-              {me.workspace.name} · {me.plan.label}
-            </span>
-          </div>
+          {me && (
+            <div className="who" title={me.email}>
+              {me.email}
+              <br />
+              <span className="faint">
+                {me.workspace.name} · {me.plan.label}
+              </span>
+            </div>
+          )}
           <div className="row">
             <button className="btn sm grow" onClick={toggle} title="Сменить тему">
               {isDark ? "☀ Светлая" : "☾ Тёмная"}
             </button>
-            <button className="btn sm ghost" onClick={logout}>
-              Выйти
-            </button>
+            {me ? (
+              <button className="btn sm ghost" onClick={logout}>
+                Выйти
+              </button>
+            ) : (
+              <Link className="btn sm ghost" to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} title="Вход для команды: отметки, заметки, сохранённые фильтры">
+                Войти
+              </Link>
+            )}
           </div>
         </div>
       </aside>

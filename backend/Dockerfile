@@ -10,6 +10,6 @@ COPY alembic.ini .
 COPY migrations ./migrations
 COPY gpi ./gpi
 
-# api:    uvicorn gpi.api.main:app --host 0.0.0.0 --port 8000
+# api:    uvicorn gpi.api.main:app --host 0.0.0.0 --port 8000 (behind Caddy; its X-Forwarded-For gives the client IP)
 # worker: python -m gpi.cli worker
-CMD ["uvicorn", "gpi.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["uvicorn", "gpi.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

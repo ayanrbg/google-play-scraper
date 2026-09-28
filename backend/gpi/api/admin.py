@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from gpi.api.deps import Ctx, current, get_db, superadmin
+from gpi.api.deps import Ctx, current, get_db, superadmin, viewer
 from gpi.models import App, BrandRule, ChartDaily, GameMetrics, JobRun, Keyword, LogEntry, Snapshot, User, Workspace
 from gpi.pipeline.brand import RULE_KINDS
 from gpi.plans import PLANS
@@ -26,9 +26,9 @@ def run_payload(r: JobRun, with_error: bool) -> dict:
 
 
 @router.get("/status")
-def status(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+def status(ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
     cfg = get_settings()
-    su = ctx.user.is_superadmin
+    su = ctx.is_superadmin
     last_runs = {}
     for job in JOBS:
         r = db.scalar(select(JobRun).where(JobRun.job == job).order_by(JobRun.started_at.desc()).limit(1))

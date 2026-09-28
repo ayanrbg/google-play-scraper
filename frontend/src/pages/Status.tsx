@@ -160,7 +160,7 @@ export default function Status() {
     queryKey: ["logs", level],
     queryFn: () => api<LogLine[]>("/logs", { params: { level, limit: 300 } }),
     refetchInterval: 15_000,
-    enabled: me.is_superadmin,
+    enabled: !!me?.is_superadmin,
   });
   const [open, setOpen] = useState<number | null>(null);
   const run = useMutation({
@@ -181,7 +181,7 @@ export default function Status() {
             Как идёт сбор. Страница обновляется сама. Время указано по вашему часовому поясу.
           </p>
         </div>
-        {me.is_superadmin && (
+        {me?.is_superadmin && (
           <div style={{ textAlign: "right" }}>
             <button className="btn primary" onClick={() => run.mutate()} disabled={running || d.pending_run || run.isPending}>
               {running ? "Сбор идёт…" : d.pending_run ? "Запуск в очереди…" : "Запустить сейчас"}
@@ -276,7 +276,7 @@ export default function Status() {
         </table>
       </div>
 
-      {me.is_superadmin && (
+      {me?.is_superadmin && (
         <>
           <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
             <h3 className="panel-title" style={{ margin: 0 }}>Журнал</h3>

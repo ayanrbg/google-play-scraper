@@ -69,6 +69,7 @@ export const ERROR_TEXT: Record<string, string> = {
   invite_invalid: "Приглашение недействительно или истекло",
   invite_email_mismatch: "Приглашение выписано на другой email",
   email_taken: "Этот email уже зарегистрирован",
+  rate_limited: "Слишком много попыток. Подождите несколько минут",
   "plan_limit:seats": "Достигнут лимит мест в тарифе",
   "plan_limit:saved_views": "Достигнут лимит сохранённых фильтров",
 };

@@ -2,6 +2,7 @@
 
 import csv
 import io
+import time
 from datetime import date, datetime, timedelta
 from statistics import median
 
@@ -11,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
-from gpi.api.deps import Ctx, current, feature, get_db
+from gpi.api.deps import Ctx, current, feature, get_db, viewer
 from gpi.catalog import GENRE_NAMES_RU
 from gpi.models import (
     App, ChartDaily, Developer, GameMetrics, Keyword, KeywordRank, Mark, ScoreHistory, Snapshot,
@@ -71,7 +72,7 @@ def build_query(f: GameFilters, ctx: Ctx):
     mark = Mark.__table__.alias("m")
     stmt = (select(App, GameMetrics, mark.c.status.label("mark_status"), mark.c.note.label("mark_note"))
             .join(GameMetrics, GameMetrics.app_id == App.app_id)
-            .outerjoin(mark, and_(mark.c.app_id == App.app_id, mark.c.workspace_id == ctx.workspace.id)))
+            .outerjoin(mark, and_(mark.c.app_id == App.app_id, mark.c.workspace_id == ctx.workspace_id)))
     conds = [App.status == "active"]
     if f.q:
         like = f"%{f.q.lower()}%"
@@ -163,7 +164,7 @@ def row_payload(app: App, m: GameMetrics, mark_status, mark_note) -> dict:
 
 
 @router.get("/games")
-def list_games(f: GameFilters = Depends(), ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+def list_games(f: GameFilters = Depends(), ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
     stmt = build_query(f, ctx)
     total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
     limit = f.page_size
@@ -197,12 +198,12 @@ def export_games(f: GameFilters = Depends(), ctx: Ctx = Depends(feature("export"
 
 
 @router.get("/games/{app_id}")
-def game_detail(app_id: str, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+def game_detail(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
     app = db.get(App, app_id)
     if not app:
         raise HTTPException(404, "not_found")
     m = db.get(GameMetrics, app_id)
-    mark = db.get(Mark, (ctx.workspace.id, app_id))
+    mark = db.get(Mark, (ctx.workspace_id, app_id))
 
     history_days = ctx.plan.get("history_days")
     since = date.today() - timedelta(days=history_days) if history_days else date(2000, 1, 1)
@@ -292,9 +293,31 @@ def set_mark(app_id: str, body: MarkIn, ctx: Ctx = Depends(current), db: Session
 
 # ----------------------------- overviews -----------------------------
 
+# Overviews scan every game on each call and the data changes once a day, so on a public site
+# they are computed once per few minutes, not once per visitor.
+OVERVIEW_TTL = 600
+_overview_cache: dict[tuple, tuple[float, list]] = {}
+
+
+def _cached(key: tuple, compute):
+    now = time.monotonic()
+    hit = _overview_cache.get(key)
+    if hit and now - hit[0] < OVERVIEW_TTL:
+        return hit[1]
+    value = compute()
+    if len(_overview_cache) > 64:   # arbitrary query params must not grow it without bound
+        _overview_cache.clear()
+    _overview_cache[key] = (now, value)
+    return value
+
+
 @router.get("/genres")
-def genres(max_age: int = 180, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+def genres(max_age: int = 180, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
     """Where young non-brand games are winning right now, per genre."""
+    return _cached(("genres", max_age), lambda: _genres(max_age, db))
+
+
+def _genres(max_age: int, db: Session) -> list:
     rows = db.execute(
         select(App.genre_id, GameMetrics.v7, GameMetrics.trend_score, GameMetrics.flag_major,
                GameMetrics.flag_franchise, GameMetrics.flag_hc_publisher)
@@ -323,8 +346,12 @@ def genres(max_age: int = 180, ctx: Ctx = Depends(current), db: Session = Depend
 
 
 @router.get("/studios")
-def studios(min_trend: float = 40, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+def studios(min_trend: float = 40, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
     """Small studios with several fresh games gaining traction: whom to watch and learn from."""
+    return _cached(("studios", min_trend), lambda: _studios(min_trend, db))
+
+
+def _studios(min_trend: float, db: Session) -> list:
     rows = db.execute(
         select(App.developer_id, App.developer, App.app_id, App.title, App.icon_url, GameMetrics.trend_score,
                GameMetrics.v7, GameMetrics.installs, GameMetrics.flag_major, GameMetrics.flag_franchise,
@@ -354,5 +381,5 @@ def studios(min_trend: float = 40, ctx: Ctx = Depends(current), db: Session = De
 
 
 @router.get("/meta")
-def meta(ctx: Ctx = Depends(current)):
+def meta(ctx: Ctx = Depends(viewer)):
     return {"genres": GENRE_NAMES_RU, "flags": FLAG_LABELS}

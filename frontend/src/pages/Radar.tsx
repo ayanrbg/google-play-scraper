@@ -102,9 +102,11 @@ export default function Radar() {
           <FGroup title="Поиск">
             <LazyInput value={f.get("q")} onCommit={(v) => f.set({ q: v })} placeholder="название, студия, id" />
           </FGroup>
-          <FGroup title="Мои фильтры">
-            <SavedViews page="games" current={() => f.all()} onApply={(p) => f.replaceAll(p)} />
-          </FGroup>
+          {me && (
+            <FGroup title="Мои фильтры">
+              <SavedViews page="games" current={() => f.all()} onApply={(p) => f.replaceAll(p)} />
+            </FGroup>
+          )}
           <FGroup title="Возраст игры" hint="с даты релиза">
             <Chips
               options={[["14", "≤ 2 нед"], ["30", "≤ 30 дн"], ["60", "≤ 60"], ["90", "≤ 90"], ["180", "≤ 180"], ["365", "≤ 1 года"], ["", "Любой"]]}
@@ -225,13 +227,15 @@ export default function Radar() {
               onChange={(v) => f.set({ soft_launch: v })}
             />
           </FGroup>
-          <FGroup title="Отметки команды">
-            <Seg
-              options={[["hide_rejected", "Без отброш."], ["interesting", "★"], ["in_work", "В работе"], ["unmarked", "Новые"], ["all", "Все"]]}
-              value={f.get("marks")}
-              onChange={(v) => f.set({ marks: v })}
-            />
-          </FGroup>
+          {me && (
+            <FGroup title="Отметки команды">
+              <Seg
+                options={[["hide_rejected", "Без отброш."], ["interesting", "★"], ["in_work", "В работе"], ["unmarked", "Новые"], ["all", "Все"]]}
+                value={f.get("marks")}
+                onChange={(v) => f.set({ marks: v })}
+              />
+            </FGroup>
+          )}
           <div className="fgroup">
             <button className="btn sm ghost" onClick={f.reset}>
               Сбросить всё
@@ -249,7 +253,7 @@ export default function Radar() {
               {data.data ? `${data.data.total.toLocaleString("ru-RU")} игр` : "…"}
               {data.isFetching && !data.isLoading ? " · обновление" : ""}
             </span>
-            {me.plan.export && (
+            {(me?.plan.export ?? true) && (
               <a className="btn sm" href={exportUrl}>
                 ↓ CSV
               </a>
@@ -271,7 +275,7 @@ export default function Radar() {
               <table className="data">
                 <thead>
                   <tr>
-                    <th />
+                    {me && <th />}
                     <SortTh label="Игра" field="title" sort={sort} dir={dir} onSort={sortBy} />
                     <SortTh label="Score" field="trend_score" sort={sort} dir={dir} onSort={sortBy} />
                     <th>Жанр</th>
@@ -288,9 +292,11 @@ export default function Radar() {
                 <tbody>
                   {data.data.items.map((g, i) => (
                     <tr key={g.app_id} className="clickable" style={{ animationDelay: `${Math.min(i, 20) * 18}ms` }} onClick={() => navigate(`/game/${encodeURIComponent(g.app_id)}`)}>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <MarkButtons game={g} onMark={(status) => mark.mutate({ id: g.app_id, status, note: g.note })} />
-                      </td>
+                      {me && (
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <MarkButtons game={g} onMark={(status) => mark.mutate({ id: g.app_id, status, note: g.note })} />
+                        </td>
+                      )}
                       <td>
                         <div className="app-cell">
                           {g.icon_url ? <img className="app-icon" src={g.icon_url} alt="" loading="lazy" /> : <div className="app-icon" />}

@@ -4,6 +4,7 @@ import { ApiError, Keyword, Page, api } from "../api";
 import { Chips, FGroup, LazyInput, Seg, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
 import { Empty, Loader, Meter, Pager, SortTh } from "../components/ui";
 import { SavedViews } from "../components/views";
+import { useMe } from "../App";
 import { fmtN, fmtPct } from "../format";
 
 type Market = { country: string; lang: string; label: string; analyzed: number };
@@ -15,6 +16,7 @@ const DEFAULTS: Record<string, string> = {
 };
 
 export default function Niches() {
+  const me = useMe();
   const f = useUrlFilters(DEFAULTS);
   const navigate = useNavigate();
   const params = f.all();
@@ -73,9 +75,11 @@ export default function Niches() {
               onChange={(v) => f.set({ min_games_share: v })}
             />
           </FGroup>
-          <FGroup title="Мои фильтры">
-            <SavedViews page="keywords" current={() => f.all()} onApply={(p) => f.replaceAll(p)} />
-          </FGroup>
+          {me && (
+            <FGroup title="Мои фильтры">
+              <SavedViews page="keywords" current={() => f.all()} onApply={(p) => f.replaceAll(p)} />
+            </FGroup>
+          )}
           <FGroup title="Спрос от">
             <Chips options={[["20", "20+"], ["40", "40+"], ["60", "60+"], ["80", "80+"]]} value={f.get("min_demand")} onChange={(v) => f.set({ min_demand: v })} />
           </FGroup>

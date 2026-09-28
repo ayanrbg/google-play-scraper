@@ -44,8 +44,70 @@ def seed_radar():
     metrics.run(TODAY)
 
 
-def test_auth_required():
-    assert TestClient(app).get("/api/games").status_code == 401
+def test_guests_read_everything_but_change_nothing():
+    seed_radar()
+    anon = TestClient(app)
+    assert anon.get("/api/me").status_code == 401
+    r = anon.get("/api/games").json()
+    assert r["items"][0]["app_id"] == "indie.hit" and r["limited_to"] is None
+    d = anon.get("/api/games/indie.hit").json()
+    assert d["mark"] is None and len(d["daily"]) == 14
+    for path in ["/api/genres", "/api/studios", "/api/status", "/api/games/export.csv", "/api/keywords",
+                 "/api/keyword-markets", "/api/meta"]:
+        assert anon.get(path).status_code == 200, path
+    assert anon.put("/api/games/indie.hit/mark", json={"status": "rejected"}).status_code == 401
+    assert anon.get("/api/views", params={"page": "games"}).status_code == 401
+    assert anon.post("/api/views", json={"page": "games", "name": "x", "params": {}}).status_code == 401
+    assert anon.get("/api/team").status_code == 401
+    assert anon.post("/api/admin/run").status_code == 401
+    assert anon.get("/api/logs").status_code == 401
+    assert anon.post("/api/brand-rules", json={"kind": "major", "pattern": "Foo"}).status_code == 401
+    assert anon.get("/api/admin/workspaces").status_code == 401
+
+
+def test_team_marks_stay_private(client):
+    seed_radar()
+    client.put("/api/games/indie.hit/mark", json={"status": "rejected", "note": "clone"})
+    anon = TestClient(app)
+    items = {g["app_id"]: g for g in anon.get("/api/games").json()["items"]}
+    assert items["indie.hit"]["mark"] is None and items["indie.hit"]["note"] is None
+    assert anon.get("/api/games/indie.hit").json()["mark"] is None
+    assert "clone" not in anon.get("/api/games/export.csv", params={"marks": "all"}).text
+    assert "clone" in client.get("/api/games/export.csv", params={"marks": "all"}).text
+
+
+def test_status_hides_run_errors_from_guests(client):
+    from gpi.models import JobRun
+    with session_scope() as s:
+        s.add(JobRun(job="daily", status="error", error="proxy 1.2.3.4 refused", started_at=datetime.utcnow()))
+    assert "1.2.3.4" not in TestClient(app).get("/api/status").text
+    assert "1.2.3.4" in client.get("/api/status").text
+
+
+def test_api_never_loads_the_scraping_network_layer():
+    """Visitors must not be able to make the server fetch from Google through the proxy pool:
+    the web API reads the database only, and only the worker talks to the network."""
+    import subprocess
+    import sys
+    code = ("import sys, gpi.api.main; "
+            "print(','.join(m for m in sys.modules if m.startswith('gpi.play') or m == 'google_play_scraper'))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == ""
+
+
+def test_rate_limit_per_ip():
+    from gpi.api import ratelimit
+    for i in range(10):
+        assert ratelimit.check("1.1.1.1", "/api/auth/login", "POST", now=float(i)) is None
+    assert ratelimit.check("1.1.1.1", "/api/auth/login", "POST", now=11.0) > 0
+    assert ratelimit.check("2.2.2.2", "/api/auth/login", "POST", now=11.0) is None     # other IPs unaffected
+    assert ratelimit.check("1.1.1.1", "/api/games", "GET", now=11.0) is None           # separate budget
+    assert ratelimit.check("1.1.1.1", "/api/auth/login", "POST", now=15 * 60 + 1.0) is None  # window slides
+
+    anon = TestClient(app)
+    codes = [anon.post("/api/auth/login", json={"email": "a@b.c", "password": "wrongpass"}).status_code
+             for _ in range(11)]
+    assert codes[:10] == [401] * 10 and codes[10] == 429
 
 
 def test_registration_is_invite_only(client):

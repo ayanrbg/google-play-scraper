@@ -5,6 +5,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Respons
 import { Game, api } from "../api";
 import { Empty, Flags, Loader, Meter, Score, Stat } from "../components/ui";
 import { MarkButtons } from "./Radar";
+import { useMe } from "../App";
 import { COLLECTION_LABELS, COUNTRY_NAMES, fmtAccel, fmtAge, fmtDate, fmtFull, fmtN, fmtRating, storeUrl } from "../format";
 
 type Detail = {
@@ -40,6 +41,7 @@ const shortDate = (d: string) => new Date(d).toLocaleDateString("ru-RU", { day: 
 
 export default function GamePage() {
   const { id = "" } = useParams();
+  const me = useMe();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["game", id], queryFn: () => api<Detail>(`/games/${encodeURIComponent(id)}`) });
   const [note, setNote] = useState("");
@@ -82,8 +84,8 @@ export default function GamePage() {
             <a className="btn sm primary" href={storeUrl(app.app_id)} target="_blank" rel="noreferrer">
               Открыть в Google Play ↗
             </a>
-            <MarkButtons game={{ mark: status }} onMark={(s) => mark.mutate({ status: s, note: note || null })} />
-            {status && <span className="pill">{{ interesting: "Интересно", in_work: "В работе", rejected: "Отброшено" }[status]}</span>}
+            {me && <MarkButtons game={{ mark: status }} onMark={(s) => mark.mutate({ status: s, note: note || null })} />}
+            {me && status && <span className="pill">{{ interesting: "Интересно", in_work: "В работе", rejected: "Отброшено" }[status]}</span>}
           </div>
         </div>
         {m && (
@@ -147,7 +149,7 @@ export default function GamePage() {
         </div>
       </div>
 
-      <div className="grid-3" style={{ marginBottom: 16 }}>
+      <div className={me ? "grid-3" : "grid-2"} style={{ marginBottom: 16 }}>
         <div className="panel panel-pad">
           <h3 className="panel-title">Из чего Trend Score</h3>
           {m ? (
@@ -184,15 +186,17 @@ export default function GamePage() {
             <p className="muted">Появится через несколько дней наблюдений.</p>
           )}
         </div>
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Заметка команды</h3>
-          <div className="note-box">
-            <textarea className="input" rows={5} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Что понравилось, какую механику взять, риски…" />
-            <button className="btn sm" onClick={() => mark.mutate({ status, note: note || null })} disabled={mark.isPending}>
-              Сохранить
-            </button>
+        {me && (
+          <div className="panel panel-pad">
+            <h3 className="panel-title">Заметка команды</h3>
+            <div className="note-box">
+              <textarea className="input" rows={5} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Что понравилось, какую механику взять, риски…" />
+              <button className="btn sm" onClick={() => mark.mutate({ status, note: note || null })} disabled={mark.isPending}>
+                Сохранить
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="panel panel-pad" style={{ marginBottom: 16 }}>

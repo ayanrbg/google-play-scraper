@@ -7,11 +7,12 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from gpi.api import account, admin, games, keywords
+from gpi.api import account, admin, games, keywords, ratelimit
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="Game Ideas Radar", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app.middleware("http")(ratelimit.middleware)
 app.include_router(account.router)
 app.include_router(games.router)
 app.include_router(keywords.router)
