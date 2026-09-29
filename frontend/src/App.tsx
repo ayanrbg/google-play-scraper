@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, Me, api } from "./api";
-import { Loader, RadarMark } from "./components/ui";
+import { BrandMark, Loader } from "./components/ui";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Radar from "./pages/Radar";
@@ -91,10 +91,10 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="brand">
-          <RadarMark />
+          <BrandMark />
           <div className="brand-name">
-            Game Radar
-            <small>ideas from Google Play</small>
+            PlayTrend
+            <small>game trends on Google Play</small>
           </div>
         </div>
         <nav className="nav">

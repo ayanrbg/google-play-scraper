@@ -3,11 +3,11 @@ from datetime import date, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from gpi.api.main import app
-from gpi.auth import create_user
-from gpi.db import session_scope
-from gpi.models import App, ChartDaily, Snapshot
-from gpi.pipeline import metrics
+from playtrend.api.main import app
+from playtrend.auth import create_user
+from playtrend.db import session_scope
+from playtrend.models import App, ChartDaily, Snapshot
+from playtrend.pipeline import metrics
 
 TODAY = date.today()
 
@@ -77,7 +77,7 @@ def test_team_marks_stay_private(client):
 
 
 def test_status_hides_run_errors_from_guests(client):
-    from gpi.models import JobRun
+    from playtrend.models import JobRun
     with session_scope() as s:
         s.add(JobRun(job="daily", status="error", error="proxy 1.2.3.4 refused", started_at=datetime.utcnow()))
     assert "1.2.3.4" not in TestClient(app).get("/api/status").text
@@ -89,14 +89,14 @@ def test_api_never_loads_the_scraping_network_layer():
     the web API reads the database only, and only the worker talks to the network."""
     import subprocess
     import sys
-    code = ("import sys, gpi.api.main; "
-            "print(','.join(m for m in sys.modules if m.startswith('gpi.play') or m == 'google_play_scraper'))")
+    code = ("import sys, playtrend.api.main; "
+            "print(','.join(m for m in sys.modules if m.startswith('playtrend.play') or m == 'google_play_scraper'))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == ""
 
 
 def test_rate_limit_per_ip():
-    from gpi.api import ratelimit
+    from playtrend.api import ratelimit
     for i in range(10):
         assert ratelimit.check("1.1.1.1", "/api/auth/login", "POST", now=float(i)) is None
     assert ratelimit.check("1.1.1.1", "/api/auth/login", "POST", now=11.0) > 0
@@ -188,8 +188,8 @@ def test_brand_rules_admin(client):
 
 
 def test_daily_steps_progress_and_logs(client, monkeypatch):
-    from gpi import cli
-    from gpi.pipeline.common import install_db_logging, job_run, log, parallel
+    from playtrend import cli
+    from playtrend.pipeline.common import install_db_logging, job_run, log, parallel
 
     def fake_charts():
         with job_run("charts") as stats:
@@ -240,7 +240,7 @@ def test_soft_launch_games_get_no_lifetime_estimate(client):
 
 
 def test_revivals_are_tracked_while_surging_and_dropped_after(client):
-    from gpi.pipeline.details import select_revivals, untrack_stale
+    from playtrend.pipeline.details import select_revivals, untrack_stale
     old = TODAY - timedelta(days=900)
     with session_scope() as s:
         for app_id, installs, n_c, rank in [("old.surge", 3_000_000, 4, 80),    # 4 countries -> revival

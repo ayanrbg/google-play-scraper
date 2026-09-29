@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from gpi.models import BrandRule
+from playtrend.models import BrandRule
 
 BIG_DEV_INSTALLS = 50_000_000   # another game of this developer passed this -> established studio
 BIG_PORTFOLIO = 40              # apps on the developer page

@@ -12,13 +12,13 @@ from pydantic import BaseModel
 from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
-from gpi.api.deps import Ctx, current, feature, get_db, viewer
-from gpi.catalog import GENRE_NAMES_RU
-from gpi.models import (
+from playtrend.api.deps import Ctx, current, feature, get_db, viewer
+from playtrend.catalog import GENRE_NAMES_RU
+from playtrend.models import (
     App, ChartDaily, Developer, GameMetrics, Keyword, KeywordRank, Mark, ScoreHistory, Snapshot,
 )
-from gpi.pipeline.brand import FLAG_LABELS
-from gpi.pipeline.metrics import change_points, interpolate_daily
+from playtrend.pipeline.brand import FLAG_LABELS
+from playtrend.pipeline.metrics import change_points, interpolate_daily
 
 router = APIRouter(prefix="/api")
 

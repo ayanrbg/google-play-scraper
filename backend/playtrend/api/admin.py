@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from gpi.api.deps import Ctx, current, get_db, superadmin, viewer
-from gpi.models import App, BrandRule, ChartDaily, GameMetrics, JobRun, Keyword, LogEntry, Snapshot, User, Workspace
-from gpi.pipeline.brand import RULE_KINDS
-from gpi.plans import PLANS
-from gpi.settings import get_settings
+from playtrend.api.deps import Ctx, current, get_db, superadmin, viewer
+from playtrend.models import App, BrandRule, ChartDaily, GameMetrics, JobRun, Keyword, LogEntry, Snapshot, User, Workspace
+from playtrend.pipeline.brand import RULE_KINDS
+from playtrend.plans import PLANS
+from playtrend.settings import get_settings
 
 router = APIRouter(prefix="/api")
 

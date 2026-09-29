@@ -5,11 +5,11 @@ from datetime import date
 
 from sqlalchemy import select, update
 
-from gpi.catalog import CHART_SIZE, COLLECTIONS, COUNTRIES, GAME_CATEGORIES
-from gpi.db import session_scope, upsert
-from gpi.models import App, ChartDaily
-from gpi.pipeline.common import job_run, log, parallel
-from gpi.play import client
+from playtrend.catalog import CHART_SIZE, COLLECTIONS, COUNTRIES, GAME_CATEGORIES
+from playtrend.db import session_scope, upsert
+from playtrend.models import App, ChartDaily
+from playtrend.pipeline.common import job_run, log, parallel
+from playtrend.play import client
 
 
 def aggregate(results: list[tuple[str, str, str, list[dict]]]) -> tuple[dict, dict]:

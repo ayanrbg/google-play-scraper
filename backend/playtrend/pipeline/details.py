@@ -7,12 +7,12 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import and_, exists, func, or_, select, update
 
-from gpi.db import session_scope, upsert
-from gpi.models import App, ChartDaily, GameMetrics, Snapshot
-from gpi.pipeline.common import job_run, log, parallel
-from gpi.play import client
-from gpi.play.http import NotFound
-from gpi.settings import get_settings
+from playtrend.db import session_scope, upsert
+from playtrend.models import App, ChartDaily, GameMetrics, Snapshot
+from playtrend.pipeline.common import job_run, log, parallel
+from playtrend.play import client
+from playtrend.play.http import NotFound
+from playtrend.settings import get_settings
 
 APP_FIELDS = [
     "title", "developer", "developer_id", "genre_id", "is_game", "icon_url", "summary",

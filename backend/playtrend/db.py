@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from gpi.settings import get_settings
+from playtrend.settings import get_settings
 
 
 class Base(DeclarativeBase):

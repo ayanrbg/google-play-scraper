@@ -1,20 +1,20 @@
-# Game Radar — поиск идей для игр в Google Play
+# PlayTrend — поиск идей для игр в Google Play
 
-Сервис каждый день сканирует Google Play и находит молодые игры, которые быстро набирают установки,
+[playtrend.lol](https://playtrend.lol) каждый день сканирует Google Play и находит молодые игры, которые быстро набирают установки,
 а также поисковые запросы со спросом и слабой конкуренцией. Бренды и паблишеры, растущие на закупке
 трафика, помечаются и скрываются фильтрами. Сделан как SaaS: команды, приглашения, тарифы.
 
 ## Как устроено
 
 ```
-backend/            Python 3.12, FastAPI, SQLAlchemy, Alembic
-  gpi/play/         клиент Google Play: чарты, автодополнение, карточки, поиск, страницы
-  gpi/pipeline/     ежедневный конвейер: charts → expand → enrich → track → metrics → keywords
-  gpi/api/          REST API для сайта
-  migrations/       миграции схемы БД
-frontend/           React + Vite + TypeScript (сайт), Caddy (HTTPS + раздача)
-deploy/             docker-compose для сервера: Postgres, API, воркер, Caddy, бэкапы
-legacy/             старая версия (Streamlit + SQLite в git), только для истории
+backend/                Python 3.12, FastAPI, SQLAlchemy, Alembic
+  playtrend/play/       клиент Google Play: чарты, автодополнение, карточки, поиск, страницы
+  playtrend/pipeline/   ежедневный конвейер: charts → expand → enrich → track → metrics → keywords
+  playtrend/api/        REST API для сайта
+  migrations/           миграции схемы БД
+frontend/               React + Vite + TypeScript (сайт), Caddy (HTTPS + раздача)
+deploy/                 docker-compose для сервера: Postgres, API, воркер, Caddy, бэкапы
+legacy/                 старая версия (Streamlit + SQLite в git), только для истории
 ```
 
 ### Откуда данные
@@ -94,7 +94,7 @@ legacy/             старая версия (Streamlit + SQLite в git), то�
    docker compose up -d --build
    ```
    Caddy сам получит HTTPS-сертификат. Сайт откроется на `https://ваш-домен`.
-5. Войдите под админом. Первый сбор стартует в `GPI_DAILY_HOUR_UTC`. Чтобы не ждать, нажмите
+5. Войдите под админом. Первый сбор стартует в `PLAYTREND_DAILY_HOUR_UTC`. Чтобы не ждать, нажмите
    «Запустить сейчас» на странице «Данные».
 6. Пригласите команду: «Настройки → Команда → Создать ссылку».
 
@@ -111,28 +111,28 @@ ls backups/                                    # ежедневные дампы
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -r backend/requirements.txt pytest httpx
 cd backend
-../.venv/Scripts/python -m gpi.cli migrate                  # SQLite в data/gpi.db
-../.venv/Scripts/python -m gpi.cli create-user me@x.io pass1234 --superadmin
-../.venv/Scripts/python -m uvicorn gpi.api.main:app --port 8000
+../.venv/Scripts/python -m playtrend.cli migrate                  # SQLite в data/playtrend.db
+../.venv/Scripts/python -m playtrend.cli create-user me@x.io pass1234 --superadmin
+../.venv/Scripts/python -m uvicorn playtrend.api.main:app --port 8000
 ../.venv/Scripts/python -m pytest                           # тесты
 cd ../frontend && npm install && npm run dev                # http://localhost:5173
 ```
 
-Отдельные этапы конвейера: `python -m gpi.cli run charts enrich track metrics`.
-Импорт истории из старой базы (май–июнь 2026): `python -m gpi.cli import-legacy ../data/monitor.db`.
+Отдельные этапы конвейера: `python -m playtrend.cli run charts enrich track metrics`.
+Импорт истории из старой базы (май–июнь 2026): `python -m playtrend.cli import-legacy ../data/monitor.db`.
 
 ## SaaS
 
 - Сайт открыт: без аккаунта видно всё (радар, карточки, ниши, жанры, студии, CSV, «Данные»).
-  Гости ничего не меняют. Лимит запросов с одного IP (`backend/gpi/api/ratelimit.py`) бережёт
+  Гости ничего не меняют. Лимит запросов с одного IP (`backend/playtrend/api/ratelimit.py`) бережёт
   сервер и не даёт подбирать пароли. Сайт только читает базу: в Google (и через прокси) ходит
   один воркер по расписанию, это проверяет тест `test_api_never_loads_the_scraping_network_layer`.
 - Данные рынка общие. Отметки, заметки и сохранённые фильтры принадлежат команде (workspace)
   и видны только после входа.
-- Регистрация настраивается переменной `GPI_REGISTRATION`:
+- Регистрация настраивается переменной `PLAYTREND_REGISTRATION`:
   - `invite` — только по приглашениям (сейчас);
   - `open` — открытая регистрация.
-- Тарифы и лимиты (строки, история, ниши, экспорт, места) описаны в `backend/gpi/plans.py`.
+- Тарифы и лимиты (строки, история, ниши, экспорт, места) описаны в `backend/playtrend/plans.py`.
   Тариф команды меняется в «Настройки → Платформа». Оплату (Paddle, LemonSqueezy, ЮKassa)
   подключим позже: она будет просто менять тариф.
 - Тексты интерфейса вынесены в `frontend/src/format.ts`, чтобы потом добавить английский.

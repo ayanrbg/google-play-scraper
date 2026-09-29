@@ -19,7 +19,7 @@ from google_play_scraper.constants.regex import Regex
 from google_play_scraper.constants.request import Formats
 from google_play_scraper.features.app import parse_dom as gps_parse_dom
 
-from gpi.play.http import NotFound, request
+from playtrend.play.http import NotFound, request
 
 BASE = "https://play.google.com"
 _LIST_BODY = (Path(__file__).parent / "_list_body.txt").read_text(encoding="utf-8").strip()

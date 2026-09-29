@@ -6,10 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="GPI_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="PLAYTREND_", extra="ignore")
 
-    # Postgres in production, e.g. postgresql+psycopg://gpi:secret@db:5432/gpi
-    database_url: str = "sqlite:///./data/gpi.db"
+    # Postgres in production, e.g. postgresql+psycopg://playtrend:secret@db:5432/playtrend
+    database_url: str = "sqlite:///./data/playtrend.db"
 
     # Auth
     secret_key: str = "dev-secret-change-me"

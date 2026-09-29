@@ -12,13 +12,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: gpi
-      POSTGRES_USER: gpi
+      POSTGRES_DB: playtrend
+      POSTGRES_USER: playtrend
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gpi -d gpi"]
+      test: ["CMD-SHELL", "pg_isready -U playtrend -d playtrend"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -28,8 +28,8 @@ services:
     build: ../backend
     env_file: .env
     environment:
-      GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
-    command: ["python", "-m", "gpi.cli", "migrate"]
+      PLAYTREND_DATABASE_URL: postgresql+psycopg://playtrend:${POSTGRES_PASSWORD}@db:5432/playtrend
+    command: ["python", "-m", "playtrend.cli", "migrate"]
     depends_on:
       db:
         condition: service_healthy
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
+      PLAYTREND_DATABASE_URL: postgresql+psycopg://playtrend:${POSTGRES_PASSWORD}@db:5432/playtrend
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -51,8 +51,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      GPI_DATABASE_URL: postgresql+psycopg://gpi:${POSTGRES_PASSWORD}@db:5432/gpi
-    command: ["python", "-m", "gpi.cli", "worker"]
+      PLAYTREND_DATABASE_URL: postgresql+psycopg://playtrend:${POSTGRES_PASSWORD}@db:5432/playtrend
+    command: ["python", "-m", "playtrend.cli", "worker"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -85,8 +85,8 @@ services:
     command:
       - |
         while true; do
-          pg_dump -h db -U gpi -d gpi -Fc -f /backups/gpi-$$(date +%F).dump
-          find /backups -name 'gpi-*.dump' -mtime +7 -delete
+          pg_dump -h db -U playtrend -d playtrend -Fc -f /backups/playtrend-$$(date +%F).dump
+          find /backups -name '*.dump' -mtime +7 -delete
           sleep 86400
         done
     depends_on:

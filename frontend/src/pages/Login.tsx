@@ -2,6 +2,7 @@ import { FormEvent, ReactNode, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
+import { BrandMark } from "../components/ui";
 import { ERROR_TEXT } from "../format";
 
 export function AuthLayout({ children }: { children: ReactNode }) {
@@ -12,6 +13,10 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <span className="blip" style={{ top: "22%", left: "58%" }} />
         <span className="blip" style={{ top: "38%", left: "34%", animationDelay: "1s" }} />
         <span className="blip" style={{ top: "14%", left: "40%", animationDelay: "2s" }} />
+        <div className="brand auth-brand">
+          <BrandMark />
+          <div className="brand-name">PlayTrend</div>
+        </div>
         <div style={{ position: "relative" }}>
           <h1>Находим игры, которые растут на органике — раньше остальных.</h1>
           <p>

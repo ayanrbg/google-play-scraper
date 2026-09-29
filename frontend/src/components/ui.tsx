@@ -1,16 +1,13 @@
 import { ReactNode } from "react";
 import { FLAG_SHORT } from "../format";
 
-export function RadarMark({ size = 30, spin = false }: { size?: number; spin?: boolean }) {
+export function BrandMark({ size = 30, animate = false }: { size?: number; animate?: boolean }) {
   return (
-    <svg className="brand-mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <circle cx="16" cy="16" r="14" fill="none" stroke="var(--accent)" strokeOpacity=".25" strokeWidth="1.2" />
-      <circle cx="16" cy="16" r="9" fill="none" stroke="var(--accent)" strokeOpacity=".4" strokeWidth="1.2" />
-      <circle cx="16" cy="16" r="4" fill="none" stroke="var(--accent)" strokeOpacity=".55" strokeWidth="1.2" />
-      <g style={spin ? { transformOrigin: "16px 16px", animation: "spin 1.6s linear infinite" } : undefined}>
-        <path d="M16 16 L27 8" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" />
-      </g>
-      <circle cx="23" cy="11" r="2" fill="var(--accent)" />
+    <svg className={`brand-mark${animate ? " drawing" : ""}`} width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+      <path d="M4 26.5H28M4 18.5H28M4 10.5H28" stroke="var(--accent)" strokeOpacity=".2" strokeWidth="1.2" />
+      <path className="mark-line" pathLength={1} d="M4.5 23.5L11 16.5L16.5 20L26 9" fill="none" stroke="var(--accent)"
+        strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle className="mark-dot" cx="26" cy="9" r="2.6" fill="var(--accent)" />
     </svg>
   );
 }
@@ -18,7 +15,7 @@ export function RadarMark({ size = 30, spin = false }: { size?: number; spin?: b
 export function Loader() {
   return (
     <div className="loader">
-      <RadarMark size={40} spin />
+      <BrandMark size={40} animate />
     </div>
   );
 }
@@ -26,7 +23,7 @@ export function Loader() {
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="empty">
-      <RadarMark size={40} />
+      <BrandMark size={40} />
       <h3>{title}</h3>
       <div>{children}</div>
     </div>

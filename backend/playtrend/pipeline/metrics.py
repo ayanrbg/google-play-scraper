@@ -14,10 +14,10 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import delete, func, select
 
-from gpi.db import session_scope, upsert
-from gpi.models import App, ChartDaily, Developer, GameMetrics, Keyword, KeywordRank, ScoreHistory, Snapshot
-from gpi.pipeline import brand
-from gpi.pipeline.common import job_run
+from playtrend.db import session_scope, upsert
+from playtrend.models import App, ChartDaily, Developer, GameMetrics, Keyword, KeywordRank, ScoreHistory, Snapshot
+from playtrend.pipeline import brand
+from playtrend.pipeline.common import job_run
 
 HISTORY_DAYS = 45
 SPARK_DAYS = 30

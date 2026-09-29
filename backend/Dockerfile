@@ -8,8 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic.ini .
 COPY migrations ./migrations
-COPY gpi ./gpi
+COPY playtrend ./playtrend
 
-# api:    uvicorn gpi.api.main:app --host 0.0.0.0 --port 8000 (behind Caddy; its X-Forwarded-For gives the client IP)
-# worker: python -m gpi.cli worker
-CMD ["uvicorn", "gpi.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# api:    uvicorn playtrend.api.main:app --host 0.0.0.0 --port 8000 (behind Caddy; its X-Forwarded-For gives the client IP)
+# worker: python -m playtrend.cli worker
+CMD ["uvicorn", "playtrend.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

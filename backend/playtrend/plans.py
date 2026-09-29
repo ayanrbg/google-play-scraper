@@ -1,7 +1,7 @@
 """SaaS plans. Every workspace has a plan; endpoints check features/limits from here.
 
 Internal team deployment uses "team" (everything on). When the product opens to the
-public, new sign-ups get GPI_DEFAULT_PLAN and billing flips the plan field.
+public, new sign-ups get PLAYTREND_DEFAULT_PLAN and billing flips the plan field.
 """
 
 PLANS: dict[str, dict] = {

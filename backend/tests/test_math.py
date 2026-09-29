@@ -1,11 +1,11 @@
 import json
 from datetime import date, timedelta
 
-from gpi.pipeline import brand
-from gpi.pipeline.charts import aggregate
-from gpi.pipeline.keywords import competition_metrics, demand_from_observation, opportunity
-from gpi.pipeline.metrics import change_points, interpolate_daily, trend_score, velocity
-from gpi.play.client import normalize_details, parse_charts
+from playtrend.pipeline import brand
+from playtrend.pipeline.charts import aggregate
+from playtrend.pipeline.keywords import competition_metrics, demand_from_observation, opportunity
+from playtrend.pipeline.metrics import change_points, interpolate_daily, trend_score, velocity
+from playtrend.play.client import normalize_details, parse_charts
 
 D0 = date(2026, 9, 1)
 
@@ -48,7 +48,7 @@ def test_trend_score_bounds_and_youth():
 
 
 def test_brand_classification():
-    from gpi.db import session_scope
+    from playtrend.db import session_scope
     with session_scope() as s:
         rules = brand.Rules.load(s)
     assert brand.classify("Subway Surfers City", "SYBO Games", None, None, None, rules) == ["major", "franchise"]
@@ -72,7 +72,7 @@ def test_opportunity_rewards_young_winners():
 
 
 def test_competition_metrics_counts_brands_and_titles():
-    from gpi.db import session_scope
+    from playtrend.db import session_scope
     with session_scope() as s:
         rules = brand.Rules.load(s)
     results = [{"app_id": f"a{i}", "title": "Screw Jam" if i < 5 else "Other", "developer": "VOODOO" if i == 0 else "X",
@@ -119,10 +119,10 @@ def test_prereg_detection():
 
 
 def test_throttling_is_counted_and_logged(caplog):
-    from gpi.play import http
+    from playtrend.play import http
     route = http.Route(name="сервер", limiter=http.RateLimiter(100))
     http.reset_throttle_count()
-    with caplog.at_level("WARNING", logger="gpi"):
+    with caplog.at_level("WARNING", logger="playtrend"):
         http._last_warned = 0.0
         http.note_throttled(route, "429", 30)
         http.note_throttled(route, "429", 30)
@@ -131,7 +131,7 @@ def test_throttling_is_counted_and_logged(caplog):
 
 
 def test_proxy_routes(caplog):
-    from gpi.play import http
+    from playtrend.play import http
     assert http.parse_proxy("1.2.3.4:8080:user:pw") == "http://user:pw@1.2.3.4:8080"
     assert http.parse_proxy("http://u:p@h:1") == "http://u:p@h:1"
     rs = http.build_routes(2.0, ["1.2.3.4:8080:u:p", "5.6.7.8:9090:u:p", "garbage"], 0.7)
@@ -140,7 +140,7 @@ def test_proxy_routes(caplog):
     http._routes = rs
     try:
         assert http.pick(heavy=True) is rs[0]          # charts always go direct
-        with caplog.at_level("WARNING", logger="gpi"):
+        with caplog.at_level("WARNING", logger="playtrend"):
             for _ in range(http.BENCH_AFTER_FAILS):
                 rs[1].failed("ProxyError")
         assert rs[1].bench_until > 0 and "1.2.3.4" in caplog.text
@@ -154,7 +154,7 @@ def test_proxy_routes(caplog):
 
 def test_soft_launch_markets(monkeypatch):
     """Google hides the release date where a game was out before its global launch."""
-    from gpi.play import client
+    from playtrend.play import client
 
     class R:
         def __init__(self, text): self.text = text
@@ -176,7 +176,7 @@ def test_soft_launch_markets(monkeypatch):
 def test_non_game_queries_lose_opportunity():
     from types import SimpleNamespace
     from datetime import datetime
-    from gpi.db import session_scope
+    from playtrend.db import session_scope
     with session_scope() as s:
         rules = brand.Rules.load(s)
     results = [{"app_id": f"a{i}", "title": "Hair Dye", "developer": "X", "score": 4.2, "min_installs": 100_000,
@@ -190,8 +190,8 @@ def test_non_game_queries_lose_opportunity():
 
 
 def test_keyword_markets_are_consistent():
-    from gpi.pipeline.keyword_markets import MARKETS
-    from gpi.pipeline.keywords import seed_queries
+    from playtrend.pipeline.keyword_markets import MARKETS
+    from playtrend.pipeline.keywords import seed_queries
     assert [m.country for m in MARKETS][0] == "us" and sum(m.primary for m in MARKETS) == 1
     assert len({(m.lang, m.country) for m in MARKETS}) == len(MARKETS) == 8
     for m in MARKETS:
@@ -202,9 +202,9 @@ def test_keyword_markets_are_consistent():
 
 def test_games_share_backfill_from_stored_ranks():
     from datetime import datetime
-    from gpi.db import session_scope
-    from gpi.models import App, Keyword, KeywordRank
-    from gpi.pipeline.keywords import backfill_games_share
+    from playtrend.db import session_scope
+    from playtrend.models import App, Keyword, KeywordRank
+    from playtrend.pipeline.keywords import backfill_games_share
     with session_scope() as s:
         s.add(Keyword(id=1, term="hair dye", demand=80, competition=30, young_share=0.5,
                       young_best_installs=1000, analyzed_at=datetime.utcnow(), opportunity=60))
@@ -218,7 +218,7 @@ def test_games_share_backfill_from_stored_ranks():
 
 
 def test_cash_games_flag():
-    from gpi.db import session_scope
+    from playtrend.db import session_scope
     with session_scope() as s:
         rules = brand.Rules.load(s)
     cls = lambda title, summary=None: "cash" in brand.classify(title, "Dev", None, None, None, rules, summary)

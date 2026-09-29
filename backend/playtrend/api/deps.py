@@ -4,10 +4,10 @@ from typing import Iterator
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from gpi.auth import COOKIE, read_token
-from gpi.db import SessionLocal
-from gpi.models import User, Workspace
-from gpi.plans import plan
+from playtrend.auth import COOKIE, read_token
+from playtrend.db import SessionLocal
+from playtrend.models import User, Workspace
+from playtrend.plans import plan
 
 
 def get_db() -> Iterator[Session]:

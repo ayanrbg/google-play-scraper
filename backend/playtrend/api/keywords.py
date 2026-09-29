@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import asc, desc, func, select
 from sqlalchemy.orm import Session
 
-from gpi.api.deps import Ctx, feature, get_db
-from gpi.catalog import GENRE_NAMES_RU
-from gpi.models import App, GameMetrics, Keyword, KeywordRank
-from gpi.pipeline.keyword_markets import MARKETS
+from playtrend.api.deps import Ctx, feature, get_db
+from playtrend.catalog import GENRE_NAMES_RU
+from playtrend.models import App, GameMetrics, Keyword, KeywordRank
+from playtrend.pipeline.keyword_markets import MARKETS
 
 router = APIRouter(prefix="/api")
 

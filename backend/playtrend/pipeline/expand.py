@@ -9,14 +9,14 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_, select, update
 
-from gpi.catalog import COUNTRIES
-from gpi.db import session_scope, upsert
-from gpi.models import App, Developer, GameMetrics
-from gpi.pipeline.common import job_run, log, parallel
-from gpi.pipeline.details import add_stubs
-from gpi.play import client
-from gpi.play.http import NotFound
-from gpi.settings import get_settings
+from playtrend.catalog import COUNTRIES
+from playtrend.db import session_scope, upsert
+from playtrend.models import App, Developer, GameMetrics
+from playtrend.pipeline.common import job_run, log, parallel
+from playtrend.pipeline.details import add_stubs
+from playtrend.play import client
+from playtrend.play.http import NotFound
+from playtrend.settings import get_settings
 
 BRAND_FLAGS = {"major", "hc_publisher", "franchise"}
 DEV_PAGE_LIMIT = 60

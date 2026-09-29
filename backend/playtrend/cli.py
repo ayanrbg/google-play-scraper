@@ -1,9 +1,9 @@
-"""Command line: `python -m gpi.cli <command>`.
+"""Command line: `python -m playtrend.cli <command>`.
 
   migrate                 apply DB migrations + seed brand rules + create first admin
   daily                   run the full daily pipeline once
   run <job> [...]         run single jobs: charts expand enrich track metrics keywords cleanup
-  worker                  long-running scheduler (runs `daily` once a day at GPI_DAILY_HOUR_UTC)
+  worker                  long-running scheduler (runs `daily` once a day at PLAYTREND_DAILY_HOUR_UTC)
   create-user <email> <password> [--superadmin]
   import-legacy <path>    import history from the old SQLite monitor.db
 """
@@ -16,11 +16,11 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import delete, select
 
-from gpi.db import session_scope
-from gpi.models import ChartDaily, JobRun, ScoreHistory
-from gpi.settings import get_settings
+from playtrend.db import session_scope
+from playtrend.models import ChartDaily, JobRun, ScoreHistory
+from playtrend.settings import get_settings
 
-log = logging.getLogger("gpi")
+log = logging.getLogger("playtrend")
 
 
 def migrate():
@@ -34,9 +34,9 @@ def migrate():
 
 
 def bootstrap():
-    from gpi.auth import create_user
-    from gpi.models import User
-    from gpi.pipeline.brand import seed_rules
+    from playtrend.auth import create_user
+    from playtrend.models import User
+    from playtrend.pipeline.brand import seed_rules
 
     s = get_settings()
     with session_scope() as db:
@@ -49,7 +49,7 @@ def bootstrap():
 
 
 def cleanup():
-    from gpi.models import App
+    from playtrend.models import App
 
     keep = date.today() - timedelta(days=get_settings().chart_retention_days)
     with session_scope() as s:
@@ -61,13 +61,13 @@ def cleanup():
             ChartDaily.app_id.not_in(select(App.app_id).where(App.tracked.is_(True)))))
         s.execute(delete(ScoreHistory).where(ScoreHistory.date < keep))
         s.execute(delete(JobRun).where(JobRun.started_at < datetime.utcnow() - timedelta(days=90)))
-    from gpi.pipeline.common import prune_logs
+    from playtrend.pipeline.common import prune_logs
     prune_logs(30)
     return {}
 
 
 def jobs():
-    from gpi.pipeline import charts, details, expand, keywords, metrics
+    from playtrend.pipeline import charts, details, expand, keywords, metrics
     return {
         "charts": charts.run,
         "expand": expand.run,
@@ -106,7 +106,7 @@ def daily():
         s.add(run)
         s.flush()
         run_id = run.id
-    from gpi.play.http import reset_throttle_count, throttle_count
+    from playtrend.play.http import reset_throttle_count, throttle_count
     reset_throttle_count()
     log.info("суточный прогон начат")
     for step in steps:
@@ -122,7 +122,7 @@ def daily():
     throttled = throttle_count()
     if throttled:
         log.warning("за прогон Google ограничивал запросы %d раз: если это повторяется каждый день, "
-                    "пора подключать прокси или снизить GPI_REQUESTS_PER_SECOND", throttled)
+                    "пора подключать прокси или снизить PLAYTREND_REQUESTS_PER_SECOND", throttled)
     save("error" if failed else "ok")
     log.log(logging.WARNING if failed else logging.INFO, "суточный прогон завершён%s",
             f", ошибки в этапах: {', '.join(failed)}" if failed else " без ошибок")
@@ -130,7 +130,7 @@ def daily():
 
 def worker():
     cfg = get_settings()
-    from gpi.pipeline.common import install_db_logging
+    from playtrend.pipeline.common import install_db_logging
     install_db_logging()
     # Only one worker exists, so anything still "running" was cut off by a restart.
     with session_scope() as s:
@@ -162,7 +162,7 @@ def worker():
 
 def main(argv=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    p = argparse.ArgumentParser(prog="gpi")
+    p = argparse.ArgumentParser(prog="playtrend")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("migrate")
     sub.add_parser("daily")
@@ -181,13 +181,13 @@ def main(argv=None):
     if args.cmd == "migrate":
         migrate()
     elif args.cmd == "daily":
-        from gpi.pipeline.common import install_db_logging
+        from playtrend.pipeline.common import install_db_logging
         install_db_logging()
         daily()
     elif args.cmd == "worker":
         worker()
     elif args.cmd == "run":
-        from gpi.pipeline.common import install_db_logging
+        from playtrend.pipeline.common import install_db_logging
         install_db_logging()
         registry = jobs()
         for name in args.jobs:
@@ -195,8 +195,8 @@ def main(argv=None):
                 sys.exit(f"unknown job {name}; choose from {', '.join(registry)}")
             registry[name]()
     elif args.cmd == "create-user":
-        from gpi.auth import create_user
-        from gpi.models import Workspace
+        from playtrend.auth import create_user
+        from playtrend.models import Workspace
         with session_scope() as s:
             ws = s.scalar(select(Workspace).where(Workspace.name == args.workspace))
             create_user(s, args.email, args.password, workspace_id=ws.id if ws else None,
@@ -204,7 +204,7 @@ def main(argv=None):
                         superadmin=args.superadmin)
         print("ok")
     elif args.cmd == "import-legacy":
-        from gpi.legacy_import import import_legacy
+        from playtrend.legacy_import import import_legacy
         print(import_legacy(args.path))
 
 

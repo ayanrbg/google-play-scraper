@@ -9,11 +9,11 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from gpi.models import Invite, User, Workspace
-from gpi.settings import get_settings
+from playtrend.models import Invite, User, Workspace
+from playtrend.settings import get_settings
 
 _ph = PasswordHasher()
-COOKIE = "gpi_session"
+COOKIE = "playtrend_session"
 
 
 def hash_password(password: str) -> str:

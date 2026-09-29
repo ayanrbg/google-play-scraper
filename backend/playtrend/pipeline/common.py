@@ -11,11 +11,11 @@ from typing import Callable, Iterable
 
 from sqlalchemy import delete
 
-from gpi.db import session_scope
-from gpi.models import JobRun, LogEntry
-from gpi.settings import get_settings
+from playtrend.db import session_scope
+from playtrend.models import JobRun, LogEntry
+from playtrend.settings import get_settings
 
-log = logging.getLogger("gpi")
+log = logging.getLogger("playtrend")
 
 _current_run: ContextVar[int | None] = ContextVar("current_run", default=None)
 _current_job: ContextVar[str | None] = ContextVar("current_job", default=None)

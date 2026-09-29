@@ -3,25 +3,25 @@ import tempfile
 from pathlib import Path
 
 _tmp = Path(tempfile.mkdtemp()) / "test.db"
-os.environ["GPI_DATABASE_URL"] = f"sqlite:///{_tmp.as_posix()}"
-os.environ["GPI_SECRET_KEY"] = "test"
-os.environ["GPI_REGISTRATION"] = "invite"
+os.environ["PLAYTREND_DATABASE_URL"] = f"sqlite:///{_tmp.as_posix()}"
+os.environ["PLAYTREND_SECRET_KEY"] = "test"
+os.environ["PLAYTREND_REGISTRATION"] = "invite"
 
 import pytest  # noqa: E402
 
-from gpi import models  # noqa: E402,F401
-from gpi.db import Base, engine, session_scope  # noqa: E402
+from playtrend import models  # noqa: E402,F401
+from playtrend.db import Base, engine, session_scope  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def fresh_db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    from gpi.pipeline.brand import seed_rules
+    from playtrend.pipeline.brand import seed_rules
     with session_scope() as s:
         seed_rules(s)
     # process-wide state of the API: overview cache and per-IP request counters
-    from gpi.api import games, ratelimit
+    from playtrend.api import games, ratelimit
     games._overview_cache.clear()
     ratelimit._hits.clear()
     yield

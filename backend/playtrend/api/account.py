@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from gpi.api.deps import Ctx, current, get_db, owner
-from gpi.auth import COOKIE, create_user, issue_token, new_invite, normalize_email, verify_password
-from gpi.models import Invite, SavedView, User, Workspace
-from gpi.plans import PLANS
-from gpi.settings import get_settings
+from playtrend.api.deps import Ctx, current, get_db, owner
+from playtrend.auth import COOKIE, create_user, issue_token, new_invite, normalize_email, verify_password
+from playtrend.models import Invite, SavedView, User, Workspace
+from playtrend.plans import PLANS
+from playtrend.settings import get_settings
 
 router = APIRouter(prefix="/api")
 
@@ -111,7 +111,7 @@ class PasswordIn(BaseModel):
 
 @router.post("/me/password")
 def change_password(body: PasswordIn, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
-    from gpi.auth import hash_password
+    from playtrend.auth import hash_password
     user = db.get(User, ctx.user.id)
     if not verify_password(user.password_hash, body.current):
         raise HTTPException(400, "invalid_credentials")

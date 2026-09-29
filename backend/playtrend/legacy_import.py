@@ -9,8 +9,8 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from gpi.db import session_scope, upsert
-from gpi.models import App, Snapshot
+from playtrend.db import session_scope, upsert
+from playtrend.models import App, Snapshot
 
 
 def _date(text):

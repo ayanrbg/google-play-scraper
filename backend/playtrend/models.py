@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from gpi.db import Base
+from playtrend.db import Base
 
 
 def utcnow() -> datetime:

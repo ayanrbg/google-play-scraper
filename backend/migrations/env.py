@@ -2,8 +2,8 @@ from logging.config import fileConfig
 
 from alembic import context
 
-from gpi import models  # noqa: F401  (registers tables on Base.metadata)
-from gpi.db import Base, engine
+from playtrend import models  # noqa: F401  (registers tables on Base.metadata)
+from playtrend.db import Base, engine
 
 config = context.config
 if config.config_file_name is not None:

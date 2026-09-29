@@ -240,8 +240,8 @@ function Platform() {
   return (
     <div className="stack">
       <div className="banner info">
-        Режим SaaS: при <code>GPI_REGISTRATION=open</code> любой может зарегистрироваться и получает тариф <code>GPI_DEFAULT_PLAN</code>.
-        Тарифы и лимиты описаны в <code>backend/gpi/plans.py</code>; оплату подключаем позже, она просто меняет тариф команды.
+        Режим SaaS: при <code>PLAYTREND_REGISTRATION=open</code> любой может зарегистрироваться и получает тариф <code>PLAYTREND_DEFAULT_PLAN</code>.
+        Тарифы и лимиты описаны в <code>backend/playtrend/plans.py</code>; оплату подключаем позже, она просто меняет тариф команды.
       </div>
       <div className="table-wrap">
         <table className="data">

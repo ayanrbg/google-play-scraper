@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from gpi.settings import get_settings
+from playtrend.settings import get_settings
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -24,7 +24,7 @@ USER_AGENT = (
 BENCH_AFTER_FAILS = 3
 BENCH_SECONDS = 15 * 60
 
-log = logging.getLogger("gpi")
+log = logging.getLogger("playtrend")
 
 
 class RateLimiter:

@@ -14,14 +14,14 @@ from statistics import median
 
 from sqlalchemy import delete, select
 
-from gpi.db import session_scope, upsert
-from gpi.models import App, GameMetrics, Keyword, KeywordRank, SeedState
-from gpi.pipeline import brand
-from gpi.pipeline.common import job_run, log, parallel
-from gpi.pipeline.details import add_stubs, refresh
-from gpi.pipeline.keyword_markets import MARKETS, Market
-from gpi.play import client
-from gpi.settings import get_settings
+from playtrend.db import session_scope, upsert
+from playtrend.models import App, GameMetrics, Keyword, KeywordRank, SeedState
+from playtrend.pipeline import brand
+from playtrend.pipeline.common import job_run, log, parallel
+from playtrend.pipeline.details import add_stubs, refresh
+from playtrend.pipeline.keyword_markets import MARKETS, Market
+from playtrend.play import client
+from playtrend.settings import get_settings
 
 STOPWORDS = {"the", "and", "for", "with", "game", "games", "free", "new", "best", "super", "mega",
              "puzzle", "master", "world", "legend", "legends", "story", "saga", "online", "offline",
