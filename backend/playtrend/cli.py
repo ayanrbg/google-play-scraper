@@ -3,6 +3,7 @@
   migrate                 apply DB migrations + seed brand rules + create first admin
   daily                   run the full daily pipeline once
   run <job> [...]         run single jobs: charts expand enrich track metrics keywords cleanup
+  keys <app_id>           build the keys report (reverse ASO) of one game now
   worker                  long-running scheduler (runs `daily` once a day at PLAYTREND_DAILY_HOUR_UTC)
   create-user <email> <password> [--superadmin]
   import-legacy <path>    import history from the old SQLite monitor.db
@@ -11,6 +12,7 @@
 import argparse
 import logging
 import sys
+import threading
 import time
 from datetime import date, datetime, timedelta
 
@@ -36,6 +38,7 @@ def migrate():
 def bootstrap():
     from playtrend.auth import create_user
     from playtrend.models import User
+    from playtrend.pipeline import discovery
     from playtrend.pipeline.brand import seed_rules
 
     s = get_settings()
@@ -43,6 +46,10 @@ def bootstrap():
         added = seed_rules(db)
         if added:
             log.info("seeded %d brand rules", added)
+    backfilled = discovery.backfill()
+    if backfilled:
+        log.info("discovery history backfilled: %d events", backfilled)
+    with session_scope() as db:
         if s.admin_email and s.admin_password and not db.scalar(select(User.id).limit(1)):
             create_user(db, s.admin_email, s.admin_password, workspace_name="Main", role="owner", superadmin=True)
             log.info("created admin %s", s.admin_email)
@@ -128,10 +135,25 @@ def daily():
             f", ошибки в этапах: {', '.join(failed)}" if failed else " без ошибок")
 
 
+def keys_loop():
+    """Keys reports requested from game pages. Runs beside the daily pipeline: both share the
+    process-wide rate limits, so together they never exceed Google's pace."""
+    from playtrend.pipeline import app_keys
+    app_keys.reset_interrupted()
+    while True:
+        try:
+            if not app_keys.process_next():
+                time.sleep(10)
+        except Exception as e:
+            log.warning("очередь ключей: %s", e)
+            time.sleep(60)
+
+
 def worker():
     cfg = get_settings()
     from playtrend.pipeline.common import install_db_logging
     install_db_logging()
+    threading.Thread(target=keys_loop, name="keys", daemon=True).start()
     # Only one worker exists, so anything still "running" was cut off by a restart.
     with session_scope() as s:
         for stuck in s.scalars(select(JobRun).where(JobRun.status == "running")):
@@ -174,6 +196,8 @@ def main(argv=None):
     u.add_argument("password")
     u.add_argument("--superadmin", action="store_true")
     u.add_argument("--workspace", default="Main")
+    k = sub.add_parser("keys")
+    k.add_argument("app_id")
     imp = sub.add_parser("import-legacy")
     imp.add_argument("path")
     args = p.parse_args(argv)
@@ -194,6 +218,15 @@ def main(argv=None):
             if name not in registry:
                 sys.exit(f"unknown job {name}; choose from {', '.join(registry)}")
             registry[name]()
+    elif args.cmd == "keys":
+        from playtrend.models import KeysReport
+        from playtrend.pipeline import app_keys
+        with session_scope() as s:
+            r = s.get(KeysReport, args.app_id) or KeysReport(app_id=args.app_id)
+            r.status, r.requested_at = "pending", datetime.utcnow()
+            s.merge(r)
+        while app_keys.process_next():
+            pass
     elif args.cmd == "create-user":
         from playtrend.auth import create_user
         from playtrend.models import Workspace

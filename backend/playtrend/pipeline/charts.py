@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 from playtrend.catalog import CHART_SIZE, COLLECTIONS, COUNTRIES, GAME_CATEGORIES
 from playtrend.db import session_scope, upsert
 from playtrend.models import App, ChartDaily
+from playtrend.pipeline import discovery
 from playtrend.pipeline.common import job_run, log, parallel
 from playtrend.play import client
 
@@ -68,6 +69,10 @@ def run(countries: list[str] | None = None, categories: list[str] | None = None,
                    for aid, st in stubs.items() if aid not in known]
             upsert(s, App, new, key=["app_id"], update=[])
             upsert(s, ChartDaily, rows, key=["app_id", "date", "collection"])
+            s.flush()
+            events = discovery.chart_events(agg, {a["app_id"]: a["discovered_via"] for a in new}, today)
+            for i in range(0, len(events), 5000):
+                discovery.record(s, events[i:i + 5000])
             ids = list(stubs)
             for i in range(0, len(ids), 5000):
                 s.execute(update(App).where(App.app_id.in_(ids[i:i + 5000])).values(last_charted=today))

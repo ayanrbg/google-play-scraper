@@ -78,6 +78,7 @@ class Snapshot(Base):
     ratings: Mapped[int | None] = mapped_column(BigInteger)
     reviews: Mapped[int | None] = mapped_column(BigInteger)
     score: Mapped[float | None] = mapped_column(Float)
+    version: Mapped[str | None] = mapped_column(String(100))   # app updates show up as version changes
 
 
 class ChartDaily(Base):
@@ -97,6 +98,33 @@ class ChartDaily(Base):
     countries: Mapped[dict] = mapped_column(JSON, default=dict)
 
     __table_args__ = (Index("ix_chart_daily_date_coll", "date", "collection"),)
+
+
+class DiscoveryEvent(Base):
+    """How we came across a game: the first time each channel surfaced it.
+
+    source: chart:<collection> | similar | developer | prereg | keyword | revival | legacy
+    detail: chart {country, rank, category, countries}, similar {parent}, developer {developer_id},
+            keyword {term, lang, country, rank}, prereg {country}, revival {countries, rank, country}
+    first:  this event brought the game into the database.
+    """
+    __tablename__ = "discovery_events"
+
+    app_id: Mapped[str] = mapped_column(String(255), ForeignKey("apps.app_id", ondelete="CASCADE"), primary_key=True)
+    source: Mapped[str] = mapped_column(String(50), primary_key=True)
+    date: Mapped[date] = mapped_column(Date)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    first: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class SimilarLink(Base):
+    """Google's "similar games" list of a game, as last fetched."""
+    __tablename__ = "similar_links"
+
+    app_id: Mapped[str] = mapped_column(String(255), ForeignKey("apps.app_id", ondelete="CASCADE"), primary_key=True)
+    similar_id: Mapped[str] = mapped_column(String(255), primary_key=True, index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    date: Mapped[date] = mapped_column(Date)
 
 
 class Developer(Base):
@@ -211,6 +239,21 @@ class KeywordRank(Base):
     app_id: Mapped[str] = mapped_column(String(255), primary_key=True, index=True)
     rank: Mapped[int] = mapped_column(Integer)
     date: Mapped[date] = mapped_column(Date)
+
+
+class KeysReport(Base):
+    """Keys of one game (reverse ASO), collected on request from the game page by the worker."""
+    __tablename__ = "keys_reports"
+
+    app_id: Mapped[str] = mapped_column(String(255), ForeignKey("apps.app_id", ondelete="CASCADE"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending | running | done | error
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    requested_by: Mapped[int | None] = mapped_column(Integer)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    error: Mapped[str | None] = mapped_column(Text)
+    progress: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict | None] = mapped_column(JSON)   # the last finished report stays while a new one runs
 
 
 class SeedState(Base):

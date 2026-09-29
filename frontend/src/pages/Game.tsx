@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Game, api } from "../api";
+import { Analysis, GrowthDrivers, KeysPanel, Timeline } from "../components/insights";
 import { Empty, Flags, Loader, Meter, Score, Stat } from "../components/ui";
 import { MarkButtons } from "./Radar";
 import { useMe } from "../App";
@@ -19,7 +20,8 @@ type Detail = {
   score_history: { date: string; trend_score: number; v7: number | null }[];
   developer: { developer_id: string; name: string; app_count: number | null } | null;
   developer_apps: { app_id: string; title: string; icon_url: string; installs: number; released: string; tracked: boolean }[];
-  keywords: { id: number; term: string; demand: number; opportunity: number | null; competition: number | null; rank: number }[];
+  keywords: { id: number; term: string; country: string; demand: number; opportunity: number | null; competition: number | null; rank: number }[];
+  analysis: Analysis;
   mark: { status: string | null; note: string | null } | null;
   flag_labels: Record<string, string>;
 };
@@ -108,6 +110,11 @@ export default function GamePage() {
       </div>
 
       <div className="grid-2" style={{ marginBottom: 16 }}>
+        <GrowthDrivers analysis={q.data.analysis} />
+        <Timeline items={q.data.analysis.timeline} />
+      </div>
+
+      <div className="grid-2" style={{ marginBottom: 16 }}>
         <div className="panel panel-pad">
           <h3 className="panel-title">Установки в день</h3>
           {q.data.daily.length > 1 ? (
@@ -119,6 +126,10 @@ export default function GamePage() {
                   <YAxis tickFormatter={(v) => fmtN(v)} {...axis} width={48} />
                   <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "установок"]} />
                   <Bar dataKey="installs" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+                  {q.data.analysis.updates.map((u) => (
+                    <ReferenceLine key={u.date} x={u.date} stroke="var(--info)" strokeDasharray="3 3"
+                      label={{ value: u.version, position: "insideTopLeft", fill: "var(--info)", fontSize: 10 }} />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -127,6 +138,7 @@ export default function GamePage() {
           )}
           <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
             Google обновляет счётчик с задержкой 1–3 дня: скачки распределены по дням, последние дни без обновления не показаны.
+            {q.data.analysis.updates.length > 0 && " Пунктир — обновления игры."}
           </p>
         </div>
         <div className="panel panel-pad">
@@ -242,6 +254,8 @@ export default function GamePage() {
         )}
       </div>
 
+      <KeysPanel appId={app.app_id} />
+
       <div className="grid-2">
         <div className="panel panel-pad">
           <h3 className="panel-title">Студия: {q.data.developer?.name || "—"}</h3>
@@ -274,6 +288,7 @@ export default function GamePage() {
               <thead>
                 <tr>
                   <th>Запрос</th>
+                  <th>Рынок</th>
                   <th className="r">Позиция</th>
                   <th className="r">Спрос</th>
                   <th className="r">Возможность</th>
@@ -285,6 +300,7 @@ export default function GamePage() {
                     <td>
                       <Link className="link" to={`/niches/${k.id}`}>{k.term}</Link>
                     </td>
+                    <td className="muted">{k.country.toUpperCase()}</td>
                     <td className="r num">#{k.rank}</td>
                     <td className="r num">{Math.round(k.demand)}</td>
                     <td className="r num">{k.opportunity !== null ? Math.round(k.opportunity) : "—"}</td>

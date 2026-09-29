@@ -22,11 +22,16 @@ RULES: list[tuple[str, str | None, int, int]] = [
     ("/api/", None, 240, 60),
 ]
 
+# Keys reports make the worker send hundreds of requests to Google, and anyone may order one
+KEYS_RULE = ("keys-report", 5, 60 * 60)
+
 _hits: dict[tuple[str, str], deque] = {}
 _last_sweep = 0.0
 
 
 def _rule(path: str, method: str):
+    if method == "POST" and path.startswith("/api/games/") and path.endswith("/keys"):
+        return KEYS_RULE
     for prefix, m, limit, window in RULES:
         if path.startswith(prefix) and (m is None or m == method):
             return prefix, limit, window

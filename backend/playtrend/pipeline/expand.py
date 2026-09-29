@@ -5,13 +5,13 @@
 - Google Play's pre-registration collection.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 from playtrend.catalog import COUNTRIES
 from playtrend.db import session_scope, upsert
-from playtrend.models import App, Developer, GameMetrics
+from playtrend.models import App, Developer, GameMetrics, SimilarLink
 from playtrend.pipeline.common import job_run, log, parallel
 from playtrend.pipeline.details import add_stubs
 from playtrend.play import client
@@ -34,15 +34,22 @@ def expand_similar(limit: int) -> dict:
     seeds = [r.app_id for r in rows if not (set(r.brand_flags or []) & BRAND_FLAGS)][:limit]
     found: list[str] = []
     done: list[str] = []
+    origins: dict[str, dict] = {}
+    links = []
     for app_id, ids, err in parallel(client.similar_ids, seeds, label="similar"):
         if err and not isinstance(err, NotFound):
             continue
         found += ids or []
         done.append(app_id)
+        for pos, sid in enumerate(ids or [], 1):
+            origins.setdefault(sid, {"parent": app_id})
+            links.append({"app_id": app_id, "similar_id": sid, "position": pos, "date": date.today()})
     with session_scope() as s:
         if done:
             s.execute(update(App).where(App.app_id.in_(done)).values(similar_at=datetime.utcnow()))
-    return {"seeds": len(seeds), "found": len(set(found)), "new": add_stubs(found, "similar")}
+            s.execute(delete(SimilarLink).where(SimilarLink.app_id.in_(done)))
+            upsert(s, SimilarLink, links, key=["app_id", "similar_id"])
+    return {"seeds": len(seeds), "found": len(set(found)), "new": add_stubs(found, "similar", origins)}
 
 
 def expand_developers() -> dict:
@@ -70,17 +77,20 @@ def expand_developers() -> dict:
             if not fetched.get(d) or fetched[d] < (stale_hot if d in hot else stale)}
 
     found: list[str] = []
+    origins: dict[str, dict] = {}
     rows = []
     for dev_id, ids, err in parallel(client.developer_ids, list(todo), label="developers"):
         if err and not isinstance(err, NotFound):
             continue
         ids = ids or []
         found += ids[:DEV_PAGE_LIMIT]
+        for i in ids[:DEV_PAGE_LIMIT]:
+            origins.setdefault(i, {"developer_id": dev_id, "developer": todo[dev_id]})
         rows.append({"developer_id": dev_id, "name": todo[dev_id], "app_ids": ids,
                      "app_count": len(ids), "fetched_at": datetime.utcnow()})
     with session_scope() as s:
         upsert(s, Developer, rows, key=["developer_id"])
-    new = add_stubs(found, "developer")
+    new = add_stubs(found, "developer", origins)
     refresh_developer_stats()
     return {"developers": len(rows), "new": new}
 
@@ -100,12 +110,17 @@ def refresh_developer_stats():
 
 def expand_prereg() -> dict:
     ids: list[str] = []
+    origins: dict[str, dict] = {}
     for country in COUNTRIES[:12]:
         try:
-            ids += client.prereg_collection_ids(country)
+            found = client.prereg_collection_ids(country)
         except Exception as e:
             log.warning("prereg %s: %s", country, e)
-    return {"found": len(set(ids)), "new": add_stubs(ids, "prereg")}
+            continue
+        ids += found
+        for i in found:
+            origins.setdefault(i, {"country": country})
+    return {"found": len(set(ids)), "new": add_stubs(ids, "prereg", origins)}
 
 
 def run():

@@ -116,6 +116,15 @@ def details(app_id: str) -> dict:
     return normalize_details(gps_parse_dom(dom=html, app_id=app_id, url=url))
 
 
+def listing(app_id: str, lang: str, country: str) -> dict:
+    """Store listing texts as players of that market see them. Raises NotFound where the game
+    is not available. Google falls back to the English listing when there is no translation."""
+    url = Formats.Detail.build(app_id=app_id, lang=lang, country=country)
+    raw = gps_parse_dom(dom=request("GET", url).text, app_id=app_id, url=url)
+    return {"title": raw.get("title") or "", "summary": raw.get("summary") or "",
+            "description": raw.get("description") or ""}
+
+
 # Classic soft-launch markets. Google shows no release date there for a game that was
 # available in that country before its global launch.
 SOFT_LAUNCH_MARKETS = ["ph", "id", "au", "nz"]

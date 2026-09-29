@@ -12,10 +12,11 @@ from pydantic import BaseModel
 from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from playtrend import analysis
 from playtrend.api.deps import Ctx, current, feature, get_db, viewer
 from playtrend.catalog import GENRE_NAMES_RU
 from playtrend.models import (
-    App, ChartDaily, Developer, GameMetrics, Keyword, KeywordRank, Mark, ScoreHistory, Snapshot,
+    App, ChartDaily, Developer, GameMetrics, Keyword, KeywordRank, KeysReport, Mark, ScoreHistory, Snapshot,
 )
 from playtrend.pipeline.brand import FLAG_LABELS
 from playtrend.pipeline.metrics import change_points, interpolate_daily
@@ -242,6 +243,9 @@ def game_detail(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(g
 
     kws = db.execute(select(Keyword, KeywordRank.rank).join(KeywordRank, KeywordRank.keyword_id == Keyword.id)
                      .where(KeywordRank.app_id == app_id).order_by(Keyword.demand.desc()).limit(50)).all()
+    keywords = [{"id": k.id, "term": k.term, "country": k.country, "lang": k.lang, "demand": k.demand,
+                 "opportunity": k.opportunity, "competition": k.competition, "rank": rank} for k, rank in kws]
+    genre_rate = _cached(("genre_rate", app.genre_id), lambda: analysis.genre_ratings_per_k(db, app.genre_id))
 
     return {
         "app": {
@@ -263,8 +267,8 @@ def game_detail(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(g
         "chart_history": list(chart_history.values()),
         "score_history": [{"date": s.date, "trend_score": s.trend_score, "v7": s.v7} for s in scores],
         "developer": dev, "developer_apps": dev_apps,
-        "keywords": [{"id": k.id, "term": k.term, "demand": k.demand, "opportunity": k.opportunity,
-                      "competition": k.competition, "rank": rank} for k, rank in kws],
+        "keywords": keywords,
+        "analysis": analysis.analyze(db, app, m, snaps, chart_rows, keywords, genre_rate),
         "mark": {"status": mark.status, "note": mark.note, "updated_at": mark.updated_at} if mark else None,
         "flag_labels": FLAG_LABELS,
     }
@@ -289,6 +293,52 @@ def set_mark(app_id: str, body: MarkIn, ctx: Ctx = Depends(current), db: Session
         db.add(m)
     m.status, m.note, m.user_id, m.updated_at = body.status, body.note, ctx.user.id, datetime.utcnow()
     return {"ok": True}
+
+
+# ----------------------------- keys (reverse ASO) -----------------------------
+
+KEYS_FRESH_HOURS = 24      # a report younger than this is not rebuilt (every build costs ~500 requests)
+KEYS_QUEUE_MAX = 20
+
+
+def keys_payload(db: Session, r: KeysReport | None) -> dict:
+    if r is None:
+        return {"status": None}
+    ahead = db.scalar(select(func.count()).select_from(KeysReport).where(
+        KeysReport.status == "pending", KeysReport.requested_at < r.requested_at)) if r.status == "pending" else None
+    return {"status": r.status, "requested_at": r.requested_at, "started_at": r.started_at,
+            "finished_at": r.finished_at, "progress": r.progress or {}, "error": r.error,
+            "queue_ahead": ahead, "result": r.result}
+
+
+@router.get("/games/{app_id}/keys")
+def game_keys(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
+    return keys_payload(db, db.get(KeysReport, app_id))
+
+
+@router.post("/games/{app_id}/keys")
+def request_keys(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
+    """Queue a keys report; the worker builds it (the API itself never contacts Google).
+    Open to guests too: a report is rebuilt at most once a day and the queue is capped."""
+    if not ctx.plan.get("keywords"):
+        raise HTTPException(402, "plan_feature:keywords")
+    if not db.get(App, app_id):
+        raise HTTPException(404, "not_found")
+    r = db.get(KeysReport, app_id)
+    if r and r.status in ("pending", "running"):
+        return keys_payload(db, r)
+    if (r and r.status == "done" and r.finished_at and not ctx.is_superadmin
+            and r.finished_at > datetime.utcnow() - timedelta(hours=KEYS_FRESH_HOURS)):
+        raise HTTPException(409, "keys_fresh")
+    if db.scalar(select(func.count()).select_from(KeysReport).where(KeysReport.status == "pending")) >= KEYS_QUEUE_MAX:
+        raise HTTPException(429, "keys_queue_full")
+    if r is None:
+        r = KeysReport(app_id=app_id)
+        db.add(r)
+    r.status, r.requested_at, r.error, r.progress = "pending", datetime.utcnow(), None, {}
+    r.requested_by = ctx.user.id if ctx.user else None
+    db.flush()
+    return keys_payload(db, r)
 
 
 # ----------------------------- overviews -----------------------------

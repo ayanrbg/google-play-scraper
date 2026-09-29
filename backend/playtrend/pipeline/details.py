@@ -9,6 +9,7 @@ from sqlalchemy import and_, exists, func, or_, select, update
 
 from playtrend.db import session_scope, upsert
 from playtrend.models import App, ChartDaily, GameMetrics, Snapshot
+from playtrend.pipeline import discovery
 from playtrend.pipeline.common import job_run, log, parallel
 from playtrend.play import client
 from playtrend.play.http import NotFound
@@ -95,7 +96,8 @@ def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
             tracked_new += int(track)
         if track and d.get("real_installs") is not None:
             batch_snaps.append({"app_id": app_id, "date": today, "real_installs": d["real_installs"],
-                                "ratings": d.get("ratings"), "reviews": d.get("reviews"), "score": d.get("score")})
+                                "ratings": d.get("ratings"), "reviews": d.get("reviews"), "score": d.get("score"),
+                                "version": d.get("version")})
         batch_apps.append(row)
         ok += 1
         if len(batch_apps) >= 200:
@@ -126,15 +128,20 @@ def select_revivals(today: date) -> int:
         chart_day = s.scalar(select(func.max(ChartDaily.date)))
         if not chart_day:
             return 0
-        surging = select(ChartDaily.app_id).where(
+        surging = s.execute(select(ChartDaily).join(App, App.app_id == ChartDaily.app_id).where(
             ChartDaily.date == chart_day, ChartDaily.collection == "trending",
-            or_(ChartDaily.n_countries >= cfg.revival_min_countries, ChartDaily.best_rank <= cfg.revival_top_rank))
-        res = s.execute(update(App).where(
-            App.app_id.in_(surging), App.is_game.is_(True), App.status == "active", App.tracked.is_(False),
-            App.released < too_old,
+            or_(ChartDaily.n_countries >= cfg.revival_min_countries, ChartDaily.best_rank <= cfg.revival_top_rank),
+            App.is_game.is_(True), App.status == "active", App.tracked.is_(False), App.released < too_old,
             or_(App.real_installs.is_(None), App.real_installs < cfg.revival_max_installs),
-        ).values(tracked=True, track_reason="revival"))
-        return res.rowcount or 0
+        )).scalars().all()
+        if not surging:
+            return 0
+        s.execute(update(App).where(App.app_id.in_([c.app_id for c in surging]))
+                  .values(tracked=True, track_reason="revival"))
+        discovery.record(s, [{"app_id": c.app_id, "source": "revival", "date": today,
+                              "detail": {"countries": c.n_countries, "rank": c.best_rank, "country": c.best_country}}
+                             for c in surging])
+        return len(surging)
 
 
 def track():
@@ -205,8 +212,12 @@ def untrack_stale(today: date, max_age: int, idle_days: int) -> int:
         return (r1.rowcount or 0) + (r2.rowcount or 0)
 
 
-def add_stubs(ids: list[str], via: str) -> int:
-    """Insert unknown app ids as stubs; enrich() fills them in."""
+def add_stubs(ids: list[str], via: str, origins: dict[str, dict] | None = None) -> int:
+    """Insert unknown app ids as stubs; enrich() fills them in.
+
+    origins: app_id -> where exactly it was seen (parent game, studio, search term...), kept as
+    the discovery event of the new game.
+    """
     if not ids:
         return 0
     with session_scope() as s:
@@ -218,4 +229,8 @@ def add_stubs(ids: list[str], via: str) -> int:
                 "pre_register": False, "error_count": 0}
                for a in dict.fromkeys(ids) if a not in known]
         upsert(s, App, new, key=["app_id"], update=[])
+        s.flush()
+        origins = origins or {}
+        discovery.record(s, [{"app_id": a["app_id"], "source": via, "first": True, "detail": origins.get(a["app_id"])}
+                             for a in new])
     return len(new)

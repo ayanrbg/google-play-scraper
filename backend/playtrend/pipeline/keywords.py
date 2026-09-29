@@ -127,6 +127,34 @@ def opportunity(demand: float, m: dict) -> float:
     return round(demand * (0.45 * ease + 0.35 * newcomers + 0.20 * proof) * games, 1)
 
 
+def add_result_stubs(results: dict[int, list[dict]], terms: dict[int, str], lang: str, country: str) -> list[str]:
+    """Stubs for unknown games in the top results, remembering the search that surfaced them."""
+    origins: dict[str, dict] = {}
+    for kw_id, res in results.items():
+        for r in res[:TOP_N]:
+            origins.setdefault(r["app_id"], {"term": terms[kw_id], "lang": lang, "country": country, "rank": r["rank"]})
+    add_stubs(list(origins), "keyword", origins)
+    return list(origins)
+
+
+def save_search_results(s, results: dict[int, list[dict]], today: date):
+    """Competition and opportunity of each keyword from its search results; its ranks replaced."""
+    top_ids = list({r["app_id"] for res in results.values() for r in res[:TOP_N]})
+    rules = brand.Rules.load(s)
+    apps = {a.app_id: a for a in s.scalars(select(App).where(App.app_id.in_(top_ids))).all()} if top_ids else {}
+    ranks = []
+    for kw_id, res in results.items():
+        k = s.get(Keyword, kw_id)
+        m = competition_metrics(k.term, res, apps, rules, today)
+        for field, value in m.items():
+            setattr(k, field, value)
+        k.opportunity = opportunity(k.demand, m)
+        k.analyzed_at = datetime.utcnow()
+        s.execute(delete(KeywordRank).where(KeywordRank.keyword_id == kw_id))
+        ranks += [{"keyword_id": kw_id, "app_id": r["app_id"], "rank": r["rank"], "date": today} for r in res]
+    upsert(s, KeywordRank, ranks, key=["keyword_id", "app_id"])
+
+
 # ----------------------------- job -----------------------------
 
 def title_seeds(session, limit: int = 40) -> list[str]:
@@ -207,30 +235,14 @@ def run_market(mk: Market, stats: dict):
             results[kw.id] = res
 
     # Make sure the top results have cards (release date is what tells us "young")
-    top_ids = list({r["app_id"] for res in results.values() for r in res[:TOP_N]})
-    add_stubs(top_ids, "keyword")
+    top_ids = add_result_stubs(results, {kw.id: kw.term for kw in kws}, lang, country)
     with session_scope() as s:
         missing = s.scalars(select(App.app_id).where(App.app_id.in_(top_ids), App.details_at.is_(None))).all() if top_ids else []
     if missing:
         refresh(list(missing), "keyword-cards", set_tracked=True)
 
     with session_scope() as s:
-        rules = brand.Rules.load(s)
-        apps = {a.app_id: a for a in s.scalars(select(App).where(App.app_id.in_(top_ids))).all()} if top_ids else {}
-        ranks = []
-        for kw in kws:
-            res = results.get(kw.id)
-            if res is None:
-                continue
-            m = competition_metrics(kw.term, res, apps, rules, today)
-            k = s.get(Keyword, kw.id)
-            for field, value in m.items():
-                setattr(k, field, value)
-            k.opportunity = opportunity(k.demand, m)
-            k.analyzed_at = datetime.utcnow()
-            s.execute(delete(KeywordRank).where(KeywordRank.keyword_id == kw.id))
-            ranks += [{"keyword_id": kw.id, "app_id": r["app_id"], "rank": r["rank"], "date": today} for r in res]
-        upsert(s, KeywordRank, ranks, key=["keyword_id", "app_id"])
+        save_search_results(s, results, today)
     stats["analyzed"] = stats.get("analyzed", 0) + len(results)
     stats.setdefault("markets", {})[country] = {
         "seeds": stats["seeds"] - before[0], "terms": stats["terms"] - before[1],
