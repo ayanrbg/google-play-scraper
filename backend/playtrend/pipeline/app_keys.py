@@ -13,10 +13,10 @@ import re
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from playtrend.db import session_scope
-from playtrend.models import App, Keyword, KeysReport, KeywordRank
+from playtrend.models import App, ChartDaily, Keyword, KeysReport, KeywordRank
 from playtrend.pipeline.common import log, parallel
 from playtrend.pipeline.keyword_markets import MARKETS, Market
 from playtrend.pipeline.keywords import add_result_stubs, demand_from_observation, save_search_results
@@ -31,6 +31,18 @@ EXPAND_TOP = 4                  # strongest phrases completed via autocomplete
 MAX_KNOWN = 10                  # queries the game already ranks for, re-checked alongside
 PREFIX_LADDER = (2, 4, 7)       # prefixes tried before the full phrase
 FRESH_DAYS = 7                  # a keyword searched this recently is not searched again
+CHART_MARKETS = 4               # the game's best chart countries not covered by the keyword markets
+
+# Store language of each chart country, for markets added from where the game charts
+COUNTRY_LANG = {
+    "us": "en", "ca": "en", "gb": "en", "ie": "en", "au": "en", "nz": "en", "in": "en", "ph": "en", "sg": "en",
+    "za": "en", "ng": "en", "ke": "en", "pk": "en", "mx": "es", "es": "es", "ar": "es", "co": "es", "cl": "es",
+    "pe": "es", "ve": "es", "ec": "es", "br": "pt", "pt": "pt", "de": "de", "at": "de", "ch": "de", "fr": "fr",
+    "be": "fr", "dz": "fr", "ma": "fr", "it": "it", "nl": "nl", "pl": "pl", "se": "sv", "dk": "da", "no": "no",
+    "fi": "fi", "tr": "tr", "ru": "ru", "kz": "ru", "uz": "ru", "ua": "uk", "cz": "cs", "ro": "ro", "gr": "el",
+    "hu": "hu", "jp": "ja", "kr": "ko", "tw": "zh-TW", "hk": "zh-HK", "id": "id", "vn": "vi", "th": "th",
+    "my": "ms", "bd": "bn", "sa": "ar", "ae": "ar", "eg": "ar", "iq": "ar", "il": "iw",
+}
 
 STOPWORDS = {
     "en": set("""a about after all also an and any are as at be been best but by can come could do does each
@@ -186,7 +198,8 @@ def analyze_market(app_id: str, game_title: str, mk: Market, en_description: str
     except NotFound:
         return {**entry, "available": False}, None
     title, summary, desc = lst["title"], lst["summary"], lst["description"]
-    localized = mk.primary or en_description is None or desc.strip() != en_description.strip()
+    # English-language stores read the English listing as is; elsewhere an English text means no translation
+    localized = mk.lang == "en" or en_description is None or desc.strip() != en_description.strip()
     limit = MAX_TERMS if mk.primary else MAX_TERMS_LOCAL if localized else MAX_TERMS_UNTRANSLATED
 
     pool: dict[str, str] = {}          # term -> source
@@ -295,13 +308,30 @@ def analyze_market(app_id: str, game_title: str, mk: Market, en_description: str
             "words": words, "density": dens, "terms": terms}, desc
 
 
+def chart_markets(s, app_id: str) -> list[Market]:
+    """Where the game ranks best in its latest charts, beyond the fixed keyword markets: its players
+    may search there in a language we do not cover daily."""
+    day = s.scalar(select(func.max(ChartDaily.date)).where(ChartDaily.app_id == app_id))
+    if day is None:
+        return []
+    best: dict[str, int] = {}
+    for c in s.scalars(select(ChartDaily).where(ChartDaily.app_id == app_id, ChartDaily.date == day)):
+        for cc, r in (c.countries or {}).items():
+            best[cc] = min(r, best.get(cc, r))
+    covered = {m.country for m in MARKETS}
+    picked = [cc for cc, _ in sorted(best.items(), key=lambda kv: kv[1]) if cc not in covered and cc in COUNTRY_LANG]
+    return [Market(COUNTRY_LANG[cc], cc, f"{COUNTRY_LANG[cc]} · {cc.upper()}, игра в чартах", [])
+            for cc in picked[:CHART_MARKETS]]
+
+
 def build_report(app_id: str, progress=lambda p: None) -> dict:
     with session_scope() as s:
         app = s.get(App, app_id)
         if app is None:
             raise ValueError("игра не найдена")
         game_title = app.title or app_id
-    markets = sorted(MARKETS, key=lambda m: not m.primary)
+        extra = chart_markets(s, app_id)
+    markets = sorted(MARKETS, key=lambda m: not m.primary) + extra
     out, en_description = [], None
     for i, mk in enumerate(markets):
         progress({"market": mk.label, "done": i, "total": len(markets)})

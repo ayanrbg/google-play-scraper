@@ -60,7 +60,8 @@ def test_search_and_charts_drivers():
     hits = [{"id": 1, "term": "screw sort", "country": "us", "demand": 80, "rank": 2},
             {"id": 2, "term": "nuts", "country": "br", "demand": 30, "rank": 25}]
     x = analysis.Inputs(v7=20000, installs=900_000, search_visibility=45, keyword_hits=hits,
-                        charts_now={"top_new_free": {"n": 20, "best_rank": 4, "best_country": "br"}})
+                        charts_now={"top_new_free": {"n": 20, "best_rank": 4, "best_country": "br",
+                                                     "countries": {f"c{i}": 4 + i for i in range(20)}}})
     r = analysis.growth_drivers(x)
     levels = {d["key"]: d["level"] for d in r["drivers"]}
     assert levels["search"] == 3 and levels["charts"] == 3 and levels["external"] == 0
@@ -73,10 +74,38 @@ def test_russian_plurals():
     assert [analysis.plural(n, "страна", "страны", "стран") for n in (1, 3, 5, 11, 21, 22, 112)] ==         ["страна", "страны", "стран", "стран", "страна", "страны", "стран"]
 
 
+def test_low_chart_places_do_not_explain_growth():
+    """1.2M installs in 6 weeks, Movers & Shakers in 21 countries, Top Free only #51 and lower,
+    not in any search top-30, 17x fewer ratings than the genre: the installs come from ads."""
+    x = analysis.Inputs(v7=28000, installs=1_200_000, ratings_per_k=0.2, genre_ratings_per_k=3.4, charts_now={
+        "trending": {"n": 21, "best_rank": 4, "best_country": "gr", "countries": {"gr": 4, "fr": 11}},
+        "top_free": {"n": 18, "best_rank": 51, "best_country": "ec", "countries": {"ec": 51, "ar": 57}}})
+    r = analysis.growth_drivers(x)
+    levels = {d["key"]: d["level"] for d in r["drivers"]}
+    assert levels["charts"] == 1 and levels["external"] == 3 and levels["paid"] == 2
+    assert r["verdict"] == "Главное: трафик извне стора, закупка трафика."
+    x.studio_games, x.studio_installs, x.studio_ratings_per_k = 9, 27_000_000, 0.9
+    paid = analysis.paid_driver(x)
+    assert paid["level"] == 3 and any("ещё 9 игр на 27 млн" in e and "дёшево" in e for e in paid["evidence"])
+
+
+def test_developer_page_keeps_form_encoded_ids(monkeypatch):
+    from playtrend.play import client as play
+    urls = []
+    monkeypatch.setattr(play, "_links", lambda url: urls.append(url) or [])
+    play.developer_ids("Happy+Run")
+    play.developer_ids("A&B Games")
+    play.developer_ids("5700313618786177705")
+    assert urls[0].endswith("developer?id=Happy+Run&hl=en&gl=us")
+    assert "id=A%26B%20Games" in urls[1] and "/dev?id=5700313618786177705" in urls[2]
+
+
 def test_low_ratings_rate_is_a_paid_signal():
     x = analysis.Inputs(v7=3000, installs=200_000, ratings_per_k=1.0, genre_ratings_per_k=6.0)
     paid = analysis.paid_driver(x)
-    assert paid["level"] == 1 and "медиане жанра 6,0" in paid["evidence"][0]
+    assert paid["level"] == 2 and "медиане жанра 6,0 (в 6 раз меньше)" in paid["evidence"][0]
+    x.ratings_per_k = 2.5
+    assert analysis.paid_driver(x)["level"] == 1
     assert analysis.paid_driver(analysis.Inputs(installs=200_000, ratings_per_k=5.0, genre_ratings_per_k=6.0))["level"] == 0
 
 
@@ -169,7 +198,11 @@ def fake_store(monkeypatch):
 
 def test_keys_report_end_to_end(client, monkeypatch):  # noqa: F811
     fake_store(monkeypatch)
-    add_game("my.game", "Screw Sort", "Tiny", 20, [i * 20_000 for i in range(1, 16)])
+    add_game("my.game", "Screw Sort", "Tiny", 20, [i * 20_000 for i in range(1, 16)],
+             charts={"top_free": 2})    # add_game puts it at #3 in the US, already a keyword market
+    with session_scope() as s:
+        s.add(ChartDaily(app_id="my.game", date=TODAY, collection="trending", n_countries=1, best_rank=9,
+                         best_country="gb", countries={"gb": 9}))
     anon = TestClient(api_app)
     assert client.get("/api/games/my.game/keys").json() == {"status": None}
     r = anon.post("/api/games/my.game/keys").json()          # guests may order a report too
@@ -183,6 +216,7 @@ def test_keys_report_end_to_end(client, monkeypatch):  # noqa: F811
     markets = {m["country"]: m for m in rep["result"]["markets"]}
     assert markets["jp"]["available"] is False
     assert markets["mx"]["localized"] is False          # English listing served in Mexico
+    assert markets["gb"]["label"].startswith("en · GB") and markets["gb"]["localized"]   # a chart country
     us = {t["term"]: t for t in markets["us"]["terms"]}
     assert us["screw sort"]["rank"] == 2 and us["screw sort"]["in_title"] and us["screw sort"]["demand"] == 15 and us["screw sort 3d"]["source"] == "suggest"
     assert us["screw puzzle"]["demand"] > 80            # suggested after two letters

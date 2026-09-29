@@ -21,6 +21,8 @@ from playtrend.pipeline.metrics import change_points, rank_weight, velocity
 SPIKE_RATIO = 2.5          # a segment this many times faster than the ones before it is a jump
 SPIKE_MIN_RATE = 1000      # installs/day; smaller jumps are noise
 UPDATE_EFFECT = 1.5        # velocity after/before an update that counts as "the update worked"
+STUDIO_AUDIENCE = 5_000_000  # installs across the studio's other games: enough to cross-promote
+TOP_PLACES = 20           # chart places that bring installs by themselves
 WAVE_MAX_AGE = 180
 WAVE_MIN_TREND = 40
 MIN_GENRE_SAMPLE = 20
@@ -134,6 +136,9 @@ class Inputs:
     spikes: list[dict] = field(default_factory=list)
     effects: list[dict] = field(default_factory=list)
     versions_seen: int = 0
+    studio_games: int = 0                    # the studio's other games we know
+    studio_installs: int = 0
+    studio_ratings_per_k: float | None = None
     neighbours: list[dict] = field(default_factory=list)       # growing young games nearby
 
 
@@ -160,17 +165,28 @@ def search_driver(x: Inputs) -> dict:
 
 
 def charts_driver(x: Inputs) -> dict:
+    # Installs come from high places: #150 in a dozen countries brings little. Movers & Shakers
+    # lists games that already grow fast - a consequence of growth more than its source.
     main = [x.charts_now[c] for c in ("top_new_free", "top_free") if c in x.charts_now]
     n = sum(c["n"] for c in main)
+    ranks: dict[str, int] = {}
+    for c in main:
+        for cc, r in (c.get("countries") or {}).items():
+            ranks[cc] = min(r, ranks.get(cc, r))
+    top20 = sum(1 for r in ranks.values() if r <= TOP_PLACES)
     best = min((c["best_rank"] for c in main if c.get("best_rank")), default=None)
     trending = x.charts_now.get("trending", {}).get("n", 0)
-    level = (3 if n >= 15 or (best and best <= 10) else 2 if n >= 5 or (best and best <= 30)
+    level = (3 if top20 >= 10 or (best and best <= 3) else 2 if top20 >= 3 or (best and best <= 10)
              else 1 if n or trending else 0)
     labels = {"top_new_free": "Top New Free", "top_free": "Top Free", "trending": "Movers & Shakers",
               "top_grossing": "Top Grossing"}
     ev = [f"{labels.get(k, k)}: {c['n']} {plural(c['n'], 'страна', 'страны', 'стран')}, "
           f"лучшее место #{c['best_rank']} ({(c.get('best_country') or '').upper()})"
           for k, c in x.charts_now.items() if c["n"]]
+    if top20:
+        ev.append(f"В топ-{TOP_PLACES} Top Free / Top New Free: {top20} {plural(top20, 'страна', 'страны', 'стран')}")
+    elif n or trending:
+        ev.append("Высоких мест нет: Movers & Shakers и нижняя часть чартов — скорее следствие роста, чем его источник")
     if x.breadth_delta7:
         d = x.breadth_delta7
         ev.append(f"За неделю {'+' if d > 0 else ''}{d} {plural(d, 'страна', 'страны', 'стран')} в чартах")
@@ -209,14 +225,23 @@ def paid_driver(x: Inputs) -> dict:
     if "big_dev" in x.flags:
         points += 1
         ev.append("У студии уже есть хит 50M+: есть бюджет и опыт закупки")
+    if x.studio_installs >= STUDIO_AUDIENCE:
+        points += 1
+        low = (x.studio_ratings_per_k is not None and x.genre_ratings_per_k
+               and x.studio_ratings_per_k < 0.5 * x.genre_ratings_per_k)
+        ev.append(f"У студии ещё {x.studio_games} {plural(x.studio_games, 'игра', 'игры', 'игр')} на {fmt_n(x.studio_installs)} "
+                  "установок: своя аудитория, которую можно перегонять рекламой из игры в игру"
+                  + (f"; и у них тоже мало оценок ({fmt_f(x.studio_ratings_per_k)} на 1000) — модель «купить трафик "
+                     "дёшево, заработать на рекламе»" if low else ""))
     if x.soft_launch:
         points += 1
         ev.append("Прошла софт-лонч: так проверяют метрики перед масштабированием закупки")
     if (x.ratings_per_k is not None and x.genre_ratings_per_k and (x.installs or 0) >= 50_000
             and x.ratings_per_k < 0.5 * x.genre_ratings_per_k):
-        points += 1
-        ev.append(f"Оценок на 1000 установок {fmt_f(x.ratings_per_k)} при медиане жанра {fmt_f(x.genre_ratings_per_k)}: "
-                  "много случайных игроков, типично для рекламного трафика")
+        times = x.genre_ratings_per_k / max(x.ratings_per_k, 0.01)
+        points += 2 if times >= 5 else 1
+        ev.append(f"Оценок на 1000 установок {fmt_f(x.ratings_per_k)} при медиане жанра {fmt_f(x.genre_ratings_per_k)}"
+                  f" (в {round(times)} раз меньше): много случайных игроков, типично для рекламного трафика")
     return driver("paid", min(3, points), ev)
 
 
@@ -335,7 +360,8 @@ def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_row
             main_counts[c.date] = main_counts.get(c.date, 0) + c.n_countries
     # "Now" is the latest chart scan overall: a game that dropped out has no row that day
     latest = db.scalar(select(func.max(ChartDaily.date)))
-    charts_now = {c.collection: {"n": c.n_countries, "best_rank": c.best_rank, "best_country": c.best_country}
+    charts_now = {c.collection: {"n": c.n_countries, "best_rank": c.best_rank, "best_country": c.best_country,
+                                 "countries": c.countries or {}}
                   for c in chart_rows if c.date == latest}
     peak = max(main_counts.items(), key=lambda kv: (kv[1], kv[0]), default=None)
 
@@ -343,6 +369,12 @@ def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_row
     spikes = detect_spikes(points, chart_counts, updates)
     ratings_per_k = round(app.ratings * 1000 / app.real_installs, 2) \
         if app.ratings is not None and app.real_installs and not app.pre_register else None
+    studio = (0, 0, 0)
+    if app.developer_id:
+        studio = db.execute(select(func.count(), func.coalesce(func.sum(App.real_installs), 0),
+                                   func.coalesce(func.sum(App.ratings), 0))
+                            .where(App.developer_id == app.developer_id, App.app_id != app.app_id,
+                                   App.real_installs > 0, App.pre_register.is_(False))).one()
     x = Inputs(
         v7=m.v7 if m else None, installs=app.real_installs, age=m.age_days if m else None,
         search_visibility=m.search_visibility if m else 0, keyword_hits=keyword_hits,
@@ -350,6 +382,8 @@ def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_row
         flags=list(m.brand_flags or []) if m else [], soft_launch=bool(app.soft_launch),
         ratings_per_k=ratings_per_k, genre_ratings_per_k=genre_rate, spikes=spikes, effects=effects,
         versions_seen=sum(1 for s in snaps if s.version),
+        studio_games=studio[0], studio_installs=int(studio[1]),
+        studio_ratings_per_k=round(studio[2] * 1000 / studio[1], 2) if studio[1] else None,
         neighbours=neighbours(db, app, [h["id"] for h in keyword_hits if h["rank"] <= 10 and (h["demand"] or 0) >= 20]),
     )
     out = growth_drivers(x)

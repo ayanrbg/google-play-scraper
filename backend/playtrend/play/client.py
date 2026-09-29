@@ -254,7 +254,8 @@ def developer_ids(developer_id: str) -> list[str]:
     if developer_id.isdigit():
         url = f"{BASE}/store/apps/dev?id={developer_id}&hl=en&gl=us"
     else:
-        url = f"{BASE}/store/apps/developer?id={urllib.parse.quote(developer_id)}&hl=en&gl=us"
+        # Named ids come already form-encoded ("Happy+Run"): the "+" is a space and must stay as is
+        url = f"{BASE}/store/apps/developer?id={urllib.parse.quote(developer_id, safe='+')}&hl=en&gl=us"
     return _links(url)
 
 
