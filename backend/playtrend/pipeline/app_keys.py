@@ -31,9 +31,26 @@ EXPAND_TOP = 4                  # strongest phrases completed via autocomplete
 MAX_KNOWN = 10                  # queries the game already ranks for, re-checked alongside
 PREFIX_LADDER = (2, 4, 7)       # prefixes tried before the full phrase
 FRESH_DAYS = 7                  # a keyword searched this recently is not searched again
-CHART_MARKETS = 4               # the game's best chart countries not covered by the keyword markets
+POPULAR_DAYS = 14               # chart history that tells where the game gets its players
+POPULAR_MARKETS = 6             # such countries added beyond the fixed keyword markets
+POPULAR_PER_LANG = 2            # ...at most this many per language: one listing, the same phrases
+POPULAR_MIN_SHARE = 0.05        # ...and none far below the game's main country (a day at #190 is noise),
+POPULAR_ENOUGH = 0.005          # unless big on its own (~#10 every day in Hungary): India can dwarf the rest
 
-# Store language of each chart country, for markets added from where the game charts
+# Rough size of each store in game downloads (US = 1): #5 in Peru brings fewer players than #20 in Brazil
+COUNTRY_SIZE = {
+    "in": 4.0, "br": 1.5, "id": 1.4, "us": 1.0, "mx": 0.7, "ru": 0.6, "pk": 0.5, "tr": 0.45, "ph": 0.45,
+    "vn": 0.4, "eg": 0.35, "bd": 0.3, "co": 0.3, "th": 0.25, "ng": 0.25, "ar": 0.25, "iq": 0.2, "de": 0.2,
+    "fr": 0.2, "dz": 0.2, "sa": 0.18, "gb": 0.15, "it": 0.15, "es": 0.15, "ma": 0.15, "kr": 0.15, "jp": 0.15,
+    "pe": 0.14, "my": 0.14, "ua": 0.13, "pl": 0.11, "za": 0.11, "cl": 0.1, "ve": 0.09, "kz": 0.09, "uz": 0.09,
+    "ke": 0.08, "ca": 0.08, "ec": 0.07, "ro": 0.07, "tw": 0.06, "au": 0.05, "ae": 0.05, "nl": 0.05, "pt": 0.04,
+    "cz": 0.035, "hu": 0.03, "gr": 0.03, "be": 0.03, "se": 0.03, "il": 0.03, "at": 0.025, "ch": 0.025,
+    "hk": 0.02, "sg": 0.02, "dk": 0.018, "no": 0.018, "fi": 0.018, "ie": 0.015, "nz": 0.012,
+}
+# How much a chart place says about downloads: top charts count installs, movers growth, grossing revenue
+COLLECTION_WEIGHT = {"top_free": 1.0, "top_new_free": 0.5, "trending": 0.3, "top_grossing": 0.2}
+
+# Store language of each chart country, for markets added from where the game is popular
 COUNTRY_LANG = {
     "us": "en", "ca": "en", "gb": "en", "ie": "en", "au": "en", "nz": "en", "in": "en", "ph": "en", "sg": "en",
     "za": "en", "ng": "en", "ke": "en", "pk": "en", "mx": "es", "es": "es", "ar": "es", "co": "es", "cl": "es",
@@ -308,20 +325,52 @@ def analyze_market(app_id: str, game_title: str, mk: Market, en_description: str
             "words": words, "density": dens, "terms": terms}, desc
 
 
-def chart_markets(s, app_id: str) -> list[Market]:
-    """Where the game ranks best in its latest charts, beyond the fixed keyword markets: its players
-    may search there in a language we do not cover daily."""
-    day = s.scalar(select(func.max(ChartDaily.date)).where(ChartDaily.app_id == app_id))
-    if day is None:
-        return []
-    best: dict[str, int] = {}
-    for c in s.scalars(select(ChartDaily).where(ChartDaily.app_id == app_id, ChartDaily.date == day)):
-        for cc, r in (c.countries or {}).items():
-            best[cc] = min(r, best.get(cc, r))
+def popularity(s, app_id: str) -> dict[str, dict]:
+    """Where the game gets its players, from its chart places over the last POPULAR_DAYS of its charts.
+
+    score ~ share of downloads: store size x place^-0.8 (the curve of installs down a top chart), the best
+    collection each day, averaged over the window so a week at #10 beats one day at #3.
+    """
+    last = s.scalar(select(func.max(ChartDaily.date)).where(ChartDaily.app_id == app_id))
+    if last is None:
+        return {}
+    daily: dict[tuple[str, date], float] = {}
+    out: dict[str, dict] = {}
+    for c in s.scalars(select(ChartDaily).where(ChartDaily.app_id == app_id,
+                                                ChartDaily.date > last - timedelta(days=POPULAR_DAYS))):
+        w = COLLECTION_WEIGHT.get(c.collection, 0.2)
+        for cc, rank in (c.countries or {}).items():
+            v = w * COUNTRY_SIZE.get(cc, 0.02) * rank ** -0.8
+            daily[cc, c.date] = max(v, daily.get((cc, c.date), 0.0))
+            p = out.setdefault(cc, {"score": 0.0, "rank": rank, "collection": c.collection, "days": 0, "_best": 0.0})
+            if v > p["_best"]:
+                p.update(rank=rank, collection=c.collection, _best=v)
+    for (cc, _), v in daily.items():
+        out[cc]["score"] += v / POPULAR_DAYS
+        out[cc]["days"] += 1
+    for p in out.values():
+        del p["_best"]
+        p["score"] = round(p["score"], 4)
+    return out
+
+
+def popular_markets(pop: dict[str, dict]) -> list[Market]:
+    """The countries bringing the game most players, beyond the fixed keyword markets."""
     covered = {m.country for m in MARKETS}
-    picked = [cc for cc, _ in sorted(best.items(), key=lambda kv: kv[1]) if cc not in covered and cc in COUNTRY_LANG]
-    return [Market(COUNTRY_LANG[cc], cc, f"{COUNTRY_LANG[cc]} · {cc.upper()}, игра в чартах", [])
-            for cc in picked[:CHART_MARKETS]]
+    floor = min(POPULAR_MIN_SHARE * max((p["score"] for p in pop.values()), default=0), POPULAR_ENOUGH)
+    per_lang: Counter = Counter()
+    out = []
+    for cc in sorted(pop, key=lambda c: -pop[c]["score"]):
+        lang = COUNTRY_LANG.get(cc)
+        if pop[cc]["score"] < floor:
+            break
+        if cc in covered or lang is None or per_lang[lang] >= POPULAR_PER_LANG:
+            continue
+        per_lang[lang] += 1
+        out.append(Market(lang, cc, f"{lang} · {cc.upper()}", []))
+        if len(out) >= POPULAR_MARKETS:
+            break
+    return out
 
 
 def build_report(app_id: str, progress=lambda p: None) -> dict:
@@ -330,8 +379,10 @@ def build_report(app_id: str, progress=lambda p: None) -> dict:
         if app is None:
             raise ValueError("игра не найдена")
         game_title = app.title or app_id
-        extra = chart_markets(s, app_id)
-    markets = sorted(MARKETS, key=lambda m: not m.primary) + extra
+        pop = popularity(s, app_id)
+    # The English/US market first (others compare their listing with it), then by where the players are
+    markets = sorted(MARKETS + popular_markets(pop),
+                     key=lambda m: (not m.primary, -pop.get(m.country, {}).get("score", 0)))
     out, en_description = [], None
     for i, mk in enumerate(markets):
         progress({"market": mk.label, "done": i, "total": len(markets)})
@@ -342,6 +393,8 @@ def build_report(app_id: str, progress=lambda p: None) -> dict:
             entry, desc = {"lang": mk.lang, "country": mk.country, "label": mk.label, "error": str(e)[:300]}, None
         if mk.primary:
             en_description = desc
+        if mk.country in pop:
+            entry["popular"] = {k: pop[mk.country][k] for k in ("rank", "collection", "days")}
         out.append(entry)
     ranked = [dict(t, country=m["country"]) for m in out for t in m.get("terms", []) if t["rank"] and t["rank"] <= 10]
     ranked.sort(key=lambda t: -(t["demand"] or 0))

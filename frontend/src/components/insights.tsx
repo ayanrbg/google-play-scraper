@@ -69,7 +69,11 @@ type KeyMarket = {
   words?: number;
   density?: [string, number][];
   terms?: KeyTerm[];
+  popular?: { rank: number; collection: string; days: number };   // where the game gets its players, by charts
 };
+
+const popularText = (p: NonNullable<KeyMarket["popular"]>) =>
+  `#${p.rank} в ${COLLECTION_LABELS[p.collection] || p.collection}, в чартах ${p.days} дн. из последних 14`;
 
 type KeysReport = {
   status: "pending" | "running" | "done" | "error" | null;
@@ -282,7 +286,7 @@ export function KeysPanel({ appId }: { appId: string }) {
         !busy && (
           <Empty title="Ключи ещё не собирали">
             Возьмём название и описания игры на всех языковых рынках, найдём фразы и подсказки Google, измерим
-            спрос по каждой и позицию игры в поиске.
+            спрос по каждой и позицию игры в поиске. Кроме основных рынков — страны, где игра популярна по чартам.
           </Empty>
         )
       ) : (
@@ -294,7 +298,8 @@ export function KeysPanel({ appId }: { appId: string }) {
             {markets.map((mk, i) => {
               const top = (mk.terms || []).filter((t) => t.rank && t.rank <= 10).length;
               return (
-                <button key={mk.country} className={i === tab ? "on" : ""} onClick={() => setTab(i)}>
+                <button key={mk.country} className={i === tab ? "on" : ""} onClick={() => setTab(i)}
+                  title={cc(mk.country) + (mk.popular ? `: популярна, ${popularText(mk.popular)}` : "")}>
                   {mk.country.toUpperCase()} {mk.available === false ? "—" : top ? <span className="pill">{top}</span> : null}
                 </button>
               );
@@ -318,6 +323,7 @@ function KeyMarketView({ m, appId, showNoDemand, onShowNoDemand }: { m: KeyMarke
     <div className="stack">
       <div>
         <div className="label">{m.label}{m.localized === false && " · описание не переведено"}</div>
+        {m.popular && <div className="muted" style={{ fontSize: 13 }}>{cc(m.country)}: игра популярна здесь — {popularText(m.popular)}</div>}
         <div><b>{m.title}</b></div>
         {m.summary && <div className="muted">{m.summary}</div>}
       </div>
@@ -359,7 +365,7 @@ function KeyMarketView({ m, appId, showNoDemand, onShowNoDemand }: { m: KeyMarke
         </table>
       </div>
       {!showNoDemand && noDemand.length > 0 && (
-        <button className="btn ghost sm" style={{ alignSelf: "flex-start" }} onClick={onShowNoDemand}>
+        <button className="btn ghost sm wrap" style={{ alignSelf: "flex-start" }} onClick={onShowNoDemand}>
           Показать фразы без спроса ({noDemand.length}): их нет в подсказках Google
         </button>
       )}

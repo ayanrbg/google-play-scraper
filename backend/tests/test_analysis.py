@@ -196,13 +196,32 @@ def fake_store(monkeypatch):
     monkeypatch.setattr(app_keys.client, "search", search)
 
 
+def test_keys_popular_markets(client):  # noqa: F811
+    """Countries join the keys report by estimated downloads: store size x chart place, over two weeks."""
+    add_game("pop.game", "Pop", "Tiny", 20, [i * 20_000 for i in range(1, 16)])
+    with session_scope() as s:
+        for d in range(7):
+            s.add(ChartDaily(app_id="pop.game", date=TODAY - timedelta(days=d), collection="top_free", n_countries=6,
+                             countries={"pe": 1, "co": 5, "ar": 6, "cl": 3, "in": 40, "hu": 2}))
+        s.add(ChartDaily(app_id="pop.game", date=TODAY, collection="trending", n_countries=2,
+                         countries={"de": 190, "pe": 4}))
+        s.add(ChartDaily(app_id="pop.game", date=TODAY - timedelta(days=30), collection="top_free", n_countries=1,
+                         countries={"fr": 1}))             # a month ago: outside the window
+        pop = app_keys.popularity(s, "pop.game")
+    assert "fr" not in pop and {k: pop["pe"][k] for k in ("rank", "collection", "days")} == {"rank": 1, "collection": "top_free", "days": 7}
+    assert pop["in"]["score"] > pop["hu"]["score"]           # #40 in India brings more players than #2 in Hungary
+    picked = [m.country for m in app_keys.popular_markets(pop)]
+    assert picked[:2] == ["in", "pe"] and "co" in picked and len([c for c in picked if c in ("pe", "co", "ar", "cl")]) == 2
+    assert "de" not in picked                                 # one day at #190 in movers is noise
+
+
 def test_keys_report_end_to_end(client, monkeypatch):  # noqa: F811
     fake_store(monkeypatch)
     add_game("my.game", "Screw Sort", "Tiny", 20, [i * 20_000 for i in range(1, 16)],
              charts={"top_free": 2})    # add_game puts it at #3 in the US, already a keyword market
     with session_scope() as s:
-        s.add(ChartDaily(app_id="my.game", date=TODAY, collection="trending", n_countries=1, best_rank=9,
-                         best_country="gb", countries={"gb": 9}))
+        s.add(ChartDaily(app_id="my.game", date=TODAY, collection="trending", n_countries=1, best_rank=2,
+                         best_country="gb", countries={"gb": 2}))
     anon = TestClient(api_app)
     assert client.get("/api/games/my.game/keys").json() == {"status": None}
     r = anon.post("/api/games/my.game/keys").json()          # guests may order a report too
@@ -217,6 +236,8 @@ def test_keys_report_end_to_end(client, monkeypatch):  # noqa: F811
     assert markets["jp"]["available"] is False
     assert markets["mx"]["localized"] is False          # English listing served in Mexico
     assert markets["gb"]["label"].startswith("en · GB") and markets["gb"]["localized"]   # a chart country
+    assert markets["gb"]["popular"] == {"rank": 2, "collection": "trending", "days": 1}
+    assert [m["country"] for m in rep["result"]["markets"]][:2] == ["us", "gb"]   # tabs follow the players
     us = {t["term"]: t for t in markets["us"]["terms"]}
     assert us["screw sort"]["rank"] == 2 and us["screw sort"]["in_title"] and us["screw sort"]["demand"] == 15 and us["screw sort 3d"]["source"] == "suggest"
     assert us["screw puzzle"]["demand"] > 80            # suggested after two letters
