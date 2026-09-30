@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { Chips } from "../components/filters";
-import { Empty, Loader, Score } from "../components/ui";
+import { Empty, Loader, Score, PageSub } from "../components/ui";
 import { fmtN } from "../format";
 
 type Studio = {
@@ -19,10 +19,10 @@ export default function Studios() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Студии</h1>
-          <p className="page-sub">
+          <PageSub>
             Небольшие студии без брендов, у которых сразу несколько свежих игр набирают ход. Смотрите, что они выпускают: часто это
             быстрые тесты механик, и удачные потом масштабируют.
-          </p>
+          </PageSub>
         </div>
         <Chips options={[["30", "Score 30+"], ["40", "40+"], ["55", "55+"], ["70", "70+"]]} value={minTrend} onChange={setMinTrend} />
       </div>
@@ -34,7 +34,7 @@ export default function Studios() {
         <div className="stack">
           {q.data.map((s, i) => (
             <div key={s.developer_id} className="panel panel-pad" style={{ animation: "rowIn .35s both", animationDelay: `${Math.min(i, 12) * 30}ms` }}>
-              <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+              <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
                 <h3 className="panel-title" style={{ margin: 0 }}>{s.developer}</h3>
                 <span className="mono muted" style={{ fontSize: 12 }}>
                   {s.hot_games} горячих · {fmtN(s.v7_sum)}/день
@@ -42,7 +42,7 @@ export default function Studios() {
               </div>
               <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
                 {s.games.slice(0, 8).map((g) => (
-                  <Link key={g.app_id} to={`/game/${encodeURIComponent(g.app_id)}`} className="panel" style={{ padding: 10, width: 230, display: "flex", gap: 10, alignItems: "center", background: "var(--bg)" }}>
+                  <Link key={g.app_id} to={`/game/${encodeURIComponent(g.app_id)}`} className="panel studio-game">
                     {g.icon_url ? <img className="app-icon" src={g.icon_url} alt="" loading="lazy" /> : <div className="app-icon" />}
                     <div className="app-meta">
                       <div className="app-title" style={{ fontSize: 13 }}>{g.title}</div>

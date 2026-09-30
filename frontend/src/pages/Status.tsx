@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useMe } from "../App";
 import { Seg } from "../components/filters";
-import { Loader, Stat } from "../components/ui";
+import { Loader, Stat, PageSub } from "../components/ui";
 import { fmtDate, fmtN } from "../format";
 
 type Progress = { label: string; done: number; total: number; rate: number; eta_sec: number | null; at: string };
@@ -177,9 +177,9 @@ export default function Status() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Данные</h1>
-          <p className="page-sub">
+          <PageSub>
             Как идёт сбор. Страница обновляется сама. Время указано по вашему часовому поясу.
-          </p>
+          </PageSub>
         </div>
         {me?.is_superadmin && (
           <div style={{ textAlign: "right" }}>
@@ -191,7 +191,7 @@ export default function Status() {
         )}
       </div>
 
-      <div className="grid-2" style={{ gridTemplateColumns: "1.2fr 1fr", marginBottom: 20, alignItems: "start" }}>
+      <div className="grid-2 status-top">
         <div className="panel panel-pad">
           <h3 className="panel-title">
             {running ? "Сейчас идёт сбор" : "Последний прогон"}
@@ -278,9 +278,9 @@ export default function Status() {
 
       {me?.is_superadmin && (
         <>
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
             <h3 className="panel-title" style={{ margin: 0 }}>Журнал</h3>
-            <div style={{ width: 320 }}>
+            <div style={{ width: 320, maxWidth: "100%" }}>
               <Seg options={[["info", "Все события"], ["warning", "Предупреждения"], ["error", "Ошибки"]]} value={level} onChange={setLevel} />
             </div>
           </div>

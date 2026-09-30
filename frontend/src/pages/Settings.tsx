@@ -67,6 +67,7 @@ function Team() {
     <div className="grid-2">
       <div className="panel panel-pad">
         <h3 className="panel-title">Участники · {q.data.members.length}/{q.data.seats}</h3>
+        <div className="scroll-x">
         <table className="data">
           <tbody>
             {q.data.members.map((u: any) => (
@@ -88,6 +89,7 @@ function Team() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       {isOwner && (
         <div className="panel panel-pad">
@@ -152,13 +154,13 @@ function Brands() {
       </div>
       {me.is_superadmin && (
         <form
-          className="panel panel-pad row"
+          className="panel panel-pad row rule-form"
           onSubmit={(e) => {
             e.preventDefault();
             if (pattern.trim()) add.mutate();
           }}
         >
-          <div style={{ width: 640 }}>
+          <div style={{ width: 640, maxWidth: "100%" }}>
             <Seg options={Object.entries(KIND_LABELS) as [string, string][]} value={kind} onChange={setKind} />
           </div>
           <input className="input grow" placeholder={kind === "franchise" || kind === "cash" ? "слово в названии игры" : kind === "cash_text" ? "фраза, например cash out" : "часть имени разработчика"} value={pattern} onChange={(e) => setPattern(e.target.value)} />
@@ -259,7 +261,7 @@ function Platform() {
                 <td>{w.name}</td>
                 <td className="r num">{w.users}</td>
                 <td className="muted">{fmtDate(w.created_at)}</td>
-                <td style={{ width: 280 }}>
+                <td style={{ width: 280, minWidth: 220 }}>
                   <Seg options={Object.entries(plans.data).map(([k, p]) => [k, p.label])} value={w.plan} onChange={(plan) => setPlan.mutate({ id: w.id, plan })} />
                 </td>
               </tr>

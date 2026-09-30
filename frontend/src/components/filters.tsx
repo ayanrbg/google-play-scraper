@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useIsMobile } from "./ui";
 
 /** URL-backed filter state: shareable links and saved views for free. */
 export function useUrlFilters(defaults: Record<string, string>) {
@@ -87,22 +88,88 @@ export function FGroup({ title, hint, children }: { title: string; hint?: string
   );
 }
 
-/** Collapsible filter column; remembered per browser, collapsed by default on narrow screens. */
+/** Collapsible filter column; remembered per browser. On phones it is a full-screen sheet that always starts closed. */
 export function useFiltersOpen() {
-  const [open, setOpen] = useState<boolean>(() => {
+  const mobile = useIsMobile();
+  const [column, setColumn] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem("filters_open");
       if (v !== null) return v === "1";
     } catch {}
     return window.innerWidth > 1100;
   });
+  const [sheet, setSheet] = useState(false);
+  useEffect(() => setSheet(false), [mobile]);
   const toggle = () => {
-    setOpen(!open);
+    if (mobile) return setSheet(!sheet);
+    setColumn(!column);
     try {
-      localStorage.setItem("filters_open", open ? "0" : "1");
+      localStorage.setItem("filters_open", column ? "0" : "1");
     } catch {}
   };
-  return { open, toggle };
+  return { open: mobile ? sheet : column, toggle, mobile };
+}
+
+/** The filter column, or on phones a sheet over the page with a sticky "show results" bar. */
+export function FilterPanel({ panel, onReset, result, children }: {
+  panel: ReturnType<typeof useFiltersOpen>; onReset: () => void; result: string; children: ReactNode;
+}) {
+  const sheet = panel.mobile && panel.open;
+  useEffect(() => {
+    if (!sheet) return;
+    document.body.classList.add("locked");
+    return () => document.body.classList.remove("locked");
+  }, [sheet]);
+  if (!panel.open) return null;
+  return (
+    <aside className="panel filters">
+      {sheet && (
+        <div className="sheet-head">
+          <b>Фильтры</b>
+          <button className="btn sm ghost" onClick={panel.toggle} aria-label="Закрыть">
+            ✕
+          </button>
+        </div>
+      )}
+      {children}
+      {sheet ? (
+        <div className="sheet-foot">
+          <button className="btn ghost" onClick={onReset}>
+            Сбросить
+          </button>
+          <button className="btn primary grow" onClick={panel.toggle}>
+            Показать {result}
+          </button>
+        </div>
+      ) : (
+        <div className="fgroup">
+          <button className="btn sm ghost" onClick={onReset}>
+            Сбросить всё
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+/** Sorting for card lists, where there are no column headers to click. */
+export function SortSelect({ options, sort, dir, onChange }: {
+  options: [field: string, label: string, dir: string][]; sort: string; dir: string; onChange: (sort: string, dir: string) => void;
+}) {
+  return (
+    <div className="sort-select">
+      <select className="select" value={sort} onChange={(e) => onChange(e.target.value, options.find(([f]) => f === e.target.value)?.[2] || "desc")}>
+        {options.map(([f, label]) => (
+          <option key={f} value={f}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <button className="btn sm" onClick={() => onChange(sort, dir === "desc" ? "asc" : "desc")} title="Направление сортировки">
+        {dir === "desc" ? "↓" : "↑"}
+      </button>
+    </div>
+  );
 }
 
 export function activeCount(values: Record<string, string>, defaults: Record<string, string>) {

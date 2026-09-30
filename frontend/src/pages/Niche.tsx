@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Keyword, api } from "../api";
-import { Empty, Flags, Loader, Stat } from "../components/ui";
+import { BackLink, Empty, Flags, Loader, PageSub, Stat } from "../components/ui";
 import { fmtAge, fmtN, fmtPct, fmtRating } from "../format";
 
 type Detail = {
@@ -21,13 +21,11 @@ export default function NichePage() {
   const k = q.data.keyword;
   return (
     <>
-      <p style={{ margin: "0 0 16px" }}>
-        <Link className="link" to="/niches">← Ниши</Link>
-      </p>
+      <BackLink to="/niches" label="Ниши" />
       <div className="page-head">
         <div>
           <h1 className="page-title">«{k.term}»</h1>
-          <p className="page-sub">Выдача Google Play ({k.country.toUpperCase()}), от сида «{k.seed}».</p>
+          <PageSub>Выдача Google Play ({k.country.toUpperCase()}), от сида «{k.seed}».</PageSub>
         </div>
         <a className="btn sm" target="_blank" rel="noreferrer" href={`https://play.google.com/store/search?q=${encodeURIComponent(k.term)}&c=apps&gl=${k.country}`}>
           Открыть выдачу ↗
@@ -41,7 +39,7 @@ export default function NichePage() {
         <Stat label="Медиана топ-10" value={fmtN(k.top_median_installs)} note={`рейтинг ${fmtRating(k.top_avg_rating)}`} />
         <Stat label="Бренды в топе" value={fmtPct(k.brand_share)} note={`точных названий ${fmtPct(k.title_match_share)}`} />
       </div>
-      <div className="grid-2" style={{ gridTemplateColumns: "2fr 1fr" }}>
+      <div className="grid-2 wide-left">
         <div className="table-wrap">
           <table className="data">
             <thead>

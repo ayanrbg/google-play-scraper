@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Game, api } from "../api";
 import { Analysis, GrowthDrivers, KeysPanel, Timeline } from "../components/insights";
-import { Empty, Flags, Loader, Meter, Score, Stat } from "../components/ui";
+import { BackLink, Empty, Flags, Loader, Meter, Score, Stat } from "../components/ui";
 import { MarkButtons } from "./Radar";
 import { useMe } from "../App";
 import { COLLECTION_LABELS, COUNTRY_NAMES, fmtAccel, fmtAge, fmtDate, fmtFull, fmtN, fmtRating, storeUrl } from "../format";
@@ -65,9 +65,7 @@ export default function GamePage() {
 
   return (
     <>
-      <p style={{ margin: "0 0 16px" }}>
-        <Link className="link" to="/">← Радар</Link>
-      </p>
+      <BackLink to="/" label="Радар" />
       <div className="hero">
         {app.icon_url ? <img className="app-icon lg" src={app.icon_url} alt="" /> : <div className="app-icon lg" />}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -91,7 +89,7 @@ export default function GamePage() {
           </div>
         </div>
         {m && (
-          <div className="panel panel-pad" style={{ minWidth: 220 }}>
+          <div className="panel panel-pad hero-score">
             <div className="stat-label">Trend Score</div>
             <div style={{ fontSize: 28, marginTop: 4 }}>
               <Score value={m.trend_score} />
@@ -261,6 +259,7 @@ export default function GamePage() {
           <h3 className="panel-title">Студия: {q.data.developer?.name || "—"}</h3>
           {q.data.developer?.app_count ? <p className="muted" style={{ marginTop: -6 }}>Приложений на странице разработчика: {q.data.developer.app_count}</p> : null}
           {q.data.developer_apps.length ? (
+            <div className="scroll-x">
             <table className="data">
               <tbody>
                 {q.data.developer_apps.map((a) => (
@@ -277,6 +276,7 @@ export default function GamePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p className="muted">Других игр студии пока не видели.</p>
           )}
@@ -284,6 +284,7 @@ export default function GamePage() {
         <div className="panel panel-pad">
           <h3 className="panel-title">Ключевые слова, по которым находится</h3>
           {q.data.keywords.length ? (
+            <div className="scroll-x">
             <table className="data">
               <thead>
                 <tr>
@@ -308,6 +309,7 @@ export default function GamePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p className="muted">Пока не найдена в поиске по отслеживаемым запросам.</p>
           )}

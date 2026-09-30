@@ -2,8 +2,8 @@ import { useNavigate } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Game, Page, api } from "../api";
 import { useMe } from "../App";
-import { Chips, FGroup, LazyInput, Seg, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
-import { Empty, Flags, Loader, Pager, Score, SortTh, Sparkline } from "../components/ui";
+import { Chips, FGroup, FilterPanel, LazyInput, Seg, SortSelect, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
+import { CardStat, Empty, Flags, Loader, PageSub, Pager, Score, SortTh, Sparkline } from "../components/ui";
 import { SavedViews } from "../components/views";
 import { fmtAccel, fmtAge, fmtN, fmtRating } from "../format";
 
@@ -27,6 +27,13 @@ const PRESETS: { name: string; hint: string; params: Record<string, string> }[] 
   { name: "Софт-лонч → мир", hint: "прошли тест и вышли глобально", params: { soft_launch: "only", max_age: "60" } },
   { name: "↻ Возрождения", hint: "старые игры снова в росте", params: { revival: "only", max_age: "", sort: "trend_score" } },
   { name: "Свежие в Top New", hint: "до 30 дней, в чартах новинок", params: { charts: "top_new", max_age: "30" } },
+];
+
+// Card lists on phones have no column headers, so sorting moves to a select
+const SORTS: [string, string, string][] = [
+  ["trend_score", "Trend Score", "desc"], ["v7", "Установок в день", "desc"], ["accel", "Ускорение", "desc"],
+  ["installs", "Установки", "desc"], ["age_days", "Возраст", "asc"], ["countries", "Страны в чартах", "desc"],
+  ["search_visibility", "Поиск", "desc"], ["rating", "Рейтинг", "desc"], ["title", "Название", "asc"],
 ];
 
 const FLAG_OPTIONS: [string, string, string][] = [
@@ -77,10 +84,10 @@ export default function Radar() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Радар игр</h1>
-          <p className="page-sub">
+          <PageSub>
             Молодые игры, которые растут прямо сейчас. Trend Score учитывает скорость установок за 7 дней, ускорение, возраст,
             охват чартов по странам и рейтинг. Бренды и закупщики трафика по умолчанию скрыты.
-          </p>
+          </PageSub>
         </div>
       </div>
 
@@ -97,8 +104,7 @@ export default function Radar() {
       </div>
 
       <div className={`radar ${panel.open ? "" : "collapsed"}`}>
-        {panel.open && (
-        <aside className="panel filters">
+        <FilterPanel panel={panel} onReset={f.reset} result={data.data ? `${data.data.total.toLocaleString("ru-RU")} игр` : "игры"}>
           <FGroup title="Поиск">
             <LazyInput value={f.get("q")} onCommit={(v) => f.set({ q: v })} placeholder="название, студия, id" />
           </FGroup>
@@ -236,19 +242,14 @@ export default function Radar() {
               />
             </FGroup>
           )}
-          <div className="fgroup">
-            <button className="btn sm ghost" onClick={f.reset}>
-              Сбросить всё
-            </button>
-          </div>
-        </aside>
-        )}
+        </FilterPanel>
 
         <section style={{ minWidth: 0 }}>
           <div className="toolbar">
             <button className={`btn sm ${active ? "primary" : ""}`} onClick={panel.toggle}>
               {panel.open ? "← Скрыть фильтры" : `Фильтры${active ? ` · ${active}` : ""}`}
             </button>
+            {panel.mobile && <SortSelect options={SORTS} sort={sort} dir={dir} onChange={(s, d) => f.set({ sort: s, dir: d })} />}
             <span className="count">
               {data.data ? `${data.data.total.toLocaleString("ru-RU")} игр` : "…"}
               {data.isFetching && !data.isLoading ? " · обновление" : ""}
@@ -269,6 +270,13 @@ export default function Radar() {
               <Empty title="Ничего не найдено">
                 Ослабьте фильтры или подождите: сбор данных идёт каждый день, история копится с первого запуска.
               </Empty>
+            </div>
+          ) : panel.mobile ? (
+            <div className="cards">
+              {data.data.items.map((g) => (
+                <GameCard key={g.app_id} g={g} onOpen={() => navigate(`/game/${encodeURIComponent(g.app_id)}`)}
+                  onMark={me ? (status) => mark.mutate({ id: g.app_id, status, note: g.note }) : undefined} />
+              ))}
             </div>
           ) : (
             <div className="table-wrap">
@@ -358,6 +366,51 @@ export default function Radar() {
         </section>
       </div>
     </>
+  );
+}
+
+/** A radar row as a card, for phones. */
+function GameCard({ g, onOpen, onMark }: { g: Game; onOpen: () => void; onMark?: (status: string | null) => void }) {
+  const countries = g.new_countries + g.top_countries;
+  return (
+    <div className="card clickable" onClick={onOpen}>
+      <div className="card-top">
+        {g.icon_url ? <img className="app-icon" src={g.icon_url} alt="" loading="lazy" /> : <div className="app-icon" />}
+        <div className="app-meta grow">
+          <div className="app-title">{g.title || g.app_id}</div>
+          <div className="app-dev">
+            {g.developer} · {g.genre}
+          </div>
+        </div>
+        <Score value={g.trend_score} />
+      </div>
+      <div className="card-flags">
+        <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch || g.revival ? null : g.age_days} softLaunch={g.soft_launch_markets} revival={g.revival} hidden={g.hidden_gem} />
+      </div>
+      <div className="card-stats">
+        <CardStat label="В день">
+          {g.score_parts?.estimated ? <span className="faint">~</span> : null}
+          {fmtN(g.v7)}
+        </CardStat>
+        <CardStat label="Ускор." className={g.accel && g.accel >= 1.2 ? "delta-up" : g.accel && g.accel < 0.8 ? "delta-down" : ""}>{fmtAccel(g.accel)}</CardStat>
+        <CardStat label="Установки">{fmtN(g.installs)}</CardStat>
+        <CardStat label="Возраст">{g.pre_register ? <span className="accent">скоро</span> : fmtAge(g.age_days)}</CardStat>
+        <CardStat label="Страны">
+          {countries}
+          {g.trending_countries > 0 && <span className="accent"> ↗{g.trending_countries}</span>}
+        </CardStat>
+        <CardStat label="Поиск">{g.search_visibility ? Math.round(g.search_visibility) : <span className="faint">—</span>}</CardStat>
+        <CardStat label="Рейтинг">{fmtRating(g.rating)}</CardStat>
+      </div>
+      <div className="card-foot">
+        <Sparkline data={g.spark || []} width={140} height={30} />
+        {onMark && (
+          <span onClick={(e) => e.stopPropagation()}>
+            <MarkButtons game={g} onMark={onMark} />
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

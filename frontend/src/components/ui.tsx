@@ -1,5 +1,51 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { FLAG_SHORT } from "../format";
+
+const MOBILE_QUERY = "(max-width: 820px)";
+
+/** Phone layout: cards instead of wide tables, filters as a full-screen sheet. Matches the 820px breakpoint in styles.css. */
+export function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const on = () => setMobile(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return mobile;
+}
+
+/** Page intro. On phones it folds to a couple of lines so the data is on the first screen; a tap unfolds it. */
+export function PageSub({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <p className={`page-sub ${open ? "open" : ""}`} onClick={() => setOpen(true)}>
+      {children}
+    </p>
+  );
+}
+
+/** "Back" to the list the user came from, keeping its filters and scroll; a direct visit gets a plain link instead. */
+export function BackLink({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate();
+  const canGoBack = (window.history.state?.idx ?? 0) > 0;
+  return (
+    <p className="back">
+      <Link
+        className="link"
+        to={to}
+        onClick={(e) => {
+          if (!canGoBack) return;
+          e.preventDefault();
+          navigate(-1);
+        }}
+      >
+        ← {canGoBack ? "Назад" : label}
+      </Link>
+    </p>
+  );
+}
 
 export function BrandMark({ size = 30, animate = false }: { size?: number; animate?: boolean }) {
   return (
@@ -120,18 +166,32 @@ export function Stat({ label, value, note }: { label: string; value: ReactNode; 
   );
 }
 
+/** One labelled number in a card (the phone version of a table cell). */
+export function CardStat({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  return (
+    <div className="cs">
+      <div className="cs-label">{label}</div>
+      <div className={`cs-value num ${className || ""}`}>{children}</div>
+    </div>
+  );
+}
+
 export function Pager({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (p: number) => void }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (pages <= 1) return null;
+  const go = (p: number) => {
+    onPage(p);
+    window.scrollTo({ top: 0 });
+  };
   return (
     <div className="pager">
-      <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+      <button className="btn sm" disabled={page <= 1} onClick={() => go(page - 1)}>
         ←
       </button>
       <span>
         {page} / {pages}
       </span>
-      <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+      <button className="btn sm" disabled={page >= pages} onClick={() => go(page + 1)}>
         →
       </button>
     </div>

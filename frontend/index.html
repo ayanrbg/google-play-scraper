@@ -2,11 +2,16 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a110f" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>PlayTrend</title>
     <script>
       try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+      try {
+        const t = document.documentElement.dataset.theme, light = t ? t === "light" : matchMedia("(prefers-color-scheme: light)").matches;
+        if (light) document.querySelector('meta[name="theme-color"]').setAttribute("content", "#f1eee5");
+      } catch (e) {}
     </script>
   </head>
   <body>

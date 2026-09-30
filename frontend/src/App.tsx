@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, Me, api } from "./api";
 import { BrandMark, Loader } from "./components/ui";
@@ -32,6 +32,8 @@ function useTheme() {
   useEffect(() => {
     if (theme) document.documentElement.dataset.theme = theme;
     else delete document.documentElement.dataset.theme;
+    const dark = theme ? theme === "dark" : !window.matchMedia("(prefers-color-scheme: light)").matches;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#0a110f" : "#f1eee5");
     try {
       theme ? localStorage.setItem("theme", theme) : localStorage.removeItem("theme");
     } catch {}
@@ -78,8 +80,23 @@ function Shell({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const navType = useNavigationType();
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    setOpen(false);
+    // a new page starts at the top; Back keeps the browser's scroll position
+    if (navType !== "POP") window.scrollTo(0, 0);
+  }, [location.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", esc);
+    document.body.classList.add("locked");
+    return () => {
+      document.removeEventListener("keydown", esc);
+      document.body.classList.remove("locked");
+    };
+  }, [open]);
 
   const logout = async () => {
     await api("/auth/logout", { method: "POST" });
@@ -147,12 +164,38 @@ function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
-      <main className="main">
-        <button className="btn sm menu-toggle" onClick={() => setOpen(!open)}>
-          ☰ Меню
+      {open && <div className="backdrop" onClick={() => setOpen(false)} />}
+      <main className="main">{children}</main>
+      <nav className="tabbar">
+        <NavLink to="/" end>
+          <TabIcon d={<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12l6-5" /></>} />
+          Радар
+        </NavLink>
+        <NavLink to="/niches">
+          <TabIcon d={<><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>} />
+          Ниши
+        </NavLink>
+        <NavLink to="/genres">
+          <TabIcon d={<path d="M5 20v-8M12 20V5M19 20v-5" />} />
+          Жанры
+        </NavLink>
+        <NavLink to="/studios">
+          <TabIcon d={<><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>} />
+          Студии
+        </NavLink>
+        <button className={open || ["/status", "/settings"].includes(location.pathname) ? "active" : ""} onClick={() => setOpen(!open)}>
+          <TabIcon d={<path d="M4 7h16M4 12h16M4 17h16" />} />
+          Ещё
         </button>
-        {children}
-      </main>
+      </nav>
     </div>
+  );
+}
+
+function TabIcon({ d }: { d: React.ReactNode }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {d}
+    </svg>
   );
 }

@@ -1,11 +1,17 @@
 import { useNavigate } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ApiError, Keyword, Page, api } from "../api";
-import { Chips, FGroup, LazyInput, Seg, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
-import { Empty, Loader, Meter, Pager, SortTh } from "../components/ui";
+import { Chips, FGroup, FilterPanel, LazyInput, Seg, SortSelect, activeCount, useFiltersOpen, useUrlFilters } from "../components/filters";
+import { CardStat, Empty, Loader, Meter, PageSub, Pager, SortTh } from "../components/ui";
 import { SavedViews } from "../components/views";
 import { useMe } from "../App";
 import { fmtN, fmtPct } from "../format";
+
+const SORTS: [string, string, string][] = [
+  ["opportunity", "Возможность", "desc"], ["demand", "Спрос", "desc"], ["competition", "Конкуренция", "asc"],
+  ["young_share", "Доля молодых", "desc"], ["young_best_installs", "Лучший новичок", "desc"],
+  ["top_median_installs", "Медиана топа", "desc"], ["term", "Запрос", "asc"],
+];
 
 type Market = { country: string; lang: string; label: string; analyzed: number };
 
@@ -45,16 +51,15 @@ export default function Niches() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Ниши в поиске</h1>
-          <p className="page-sub">
+          <PageSub>
             Запросы Google Play, которые люди реально ищут. <b>Спрос</b> — по автодополнению: чем короче префикс, при котором
             Google подсказывает запрос, тем он популярнее. <b>Конкуренция</b> — по выдаче: размеры топа, доля брендов, точные
             совпадения в названиях. <b>Возможность</b> выше, когда в топе уже есть молодые игры: новичок может туда пробиться.
-          </p>
+          </PageSub>
         </div>
       </div>
       <div className={`radar ${panel.open ? "" : "collapsed"}`}>
-        {panel.open && (
-        <aside className="panel filters">
+        <FilterPanel panel={panel} onReset={f.reset} result={data.data ? `${data.data.total.toLocaleString("ru-RU")} запросов` : "запросы"}>
           <FGroup title="Язык поиска" hint="рынок Google Play">
             <div className="chips">
               {(markets.data || []).map((m) => (
@@ -95,16 +100,13 @@ export default function Niches() {
           <FGroup title="Доля брендов в топ-10 до">
             <Chips options={[["0", "0%"], ["0.2", "≤ 20%"], ["0.4", "≤ 40%"]]} value={f.get("max_brand_share")} onChange={(v) => f.set({ max_brand_share: v })} />
           </FGroup>
-          <div className="fgroup">
-            <button className="btn sm ghost" onClick={f.reset}>Сбросить всё</button>
-          </div>
-        </aside>
-        )}
+        </FilterPanel>
         <section style={{ minWidth: 0 }}>
           <div className="toolbar">
             <button className={`btn sm ${active ? "primary" : ""}`} onClick={panel.toggle}>
               {panel.open ? "← Скрыть фильтры" : `Фильтры${active ? ` · ${active}` : ""}`}
             </button>
+            {panel.mobile && <SortSelect options={SORTS} sort={sort} dir={dir} onChange={(s, d) => f.set({ sort: s, dir: d })} />}
             <span className="count">{data.data ? `${data.data.total.toLocaleString("ru-RU")} запросов` : "…"}</span>
           </div>
           {data.isLoading ? (
@@ -112,6 +114,27 @@ export default function Niches() {
           ) : !data.data?.items.length ? (
             <div className="panel">
               <Empty title="Запросов пока нет">Каждый день разбирается порция запросов: база ниш наполняется постепенно.</Empty>
+            </div>
+          ) : panel.mobile ? (
+            <div className="cards">
+              {data.data.items.map((k) => (
+                <div key={k.id} className="card clickable" onClick={() => navigate(`/niches/${k.id}`)}>
+                  <div className="card-top">
+                    <b className="grow">{k.term}</b>
+                  </div>
+                  <div className="card-meters">
+                    <MeterStat label="Возможность" value={k.opportunity} />
+                    <MeterStat label="Спрос" value={k.demand} />
+                    <MeterStat label="Конкуренция" value={k.competition} tone={(k.competition || 0) > 60 ? "bad" : (k.competition || 0) > 40 ? "warn" : undefined} />
+                  </div>
+                  <div className="card-stats">
+                    <CardStat label="Молодые">{fmtPct(k.young_share)}</CardStat>
+                    <CardStat label="Новичок">{fmtN(k.young_best_installs)}</CardStat>
+                    <CardStat label="Медиана">{fmtN(k.top_median_installs)}</CardStat>
+                    <CardStat label="Бренды">{fmtPct(k.brand_share)}</CardStat>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="table-wrap">
@@ -164,5 +187,17 @@ export default function Niches() {
         </section>
       </div>
     </>
+  );
+}
+
+function MeterStat({ label, value, tone }: { label: string; value: number | null; tone?: "warn" | "bad" }) {
+  return (
+    <div className="cs">
+      <div className="cs-label">{label}</div>
+      <div className="row">
+        <span className="cs-value num" style={{ width: 26 }}>{value !== null ? Math.round(value) : "—"}</span>
+        <Meter value={value} tone={tone} />
+      </div>
+    </div>
   );
 }
