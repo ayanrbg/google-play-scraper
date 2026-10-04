@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Game, api } from "../api";
 import { Analysis, GrowthDrivers, KeysPanel, KeysTeaser, RankBadge, Timeline, useKeysTop10 } from "../components/insights";
 import { BackLink, Empty, Flags, Loader, Meter, Score, Stat } from "../components/ui";
@@ -212,10 +212,29 @@ const METRICS: { key: Metric; label: string }[] = [
   { key: "score", label: "Trend Score" },
 ];
 
+/** Installs per day, measured only where Google refreshed the counter: each point is the average since the
+ * previous refresh. Days in between have no reading of their own, so the line just connects the points
+ * instead of drawing the flat steps a day-by-day split would give. */
+function installRates(snapshots: Detail["snapshots"]) {
+  let last: { date: string; installs: number } | null = null;
+  return snapshots.map((s) => {
+    const point = { date: s.date, rate: null as number | null, span: 0 };
+    if (!last) last = s;
+    else if (s.installs > last.installs) {
+      const span = Math.max(1, Math.round((Date.parse(s.date) - Date.parse(last.date)) / 86400000));
+      point.rate = Math.round((s.installs - last.installs) / span);
+      point.span = span;
+      last = s;
+    }
+    return point;
+  });
+}
+
 /** One compact chart with a switch instead of a wall of big ones. */
 function Dynamics({ d }: { d: Detail }) {
   const [metric, setMetric] = useState<Metric>("daily");
-  const enough = { daily: d.daily.length > 1, total: d.snapshots.length > 1, score: d.score_history.length > 1 }[metric];
+  const rates = useMemo(() => installRates(d.snapshots), [d.snapshots]);
+  const enough = { daily: rates.filter((r) => r.rate !== null).length > 1, total: d.snapshots.length > 1, score: d.score_history.length > 1 }[metric];
   return (
     <div className="panel panel-pad">
       <div className="panel-head">
@@ -233,17 +252,20 @@ function Dynamics({ d }: { d: Detail }) {
         <div className="chart-box">
           <ResponsiveContainer>
             {metric === "daily" ? (
-              <BarChart data={d.daily} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <AreaChart data={rates} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                {gradient("g-daily", "var(--accent)")}
                 {grid}
                 {xAxis}
                 {yAxis()}
-                <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "установок"]} />
-                <Bar dataKey="installs" fill="var(--accent)" fillOpacity={0.85} radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false} />
+                <Tooltip {...tooltipStyle} labelFormatter={shortDate}
+                  formatter={(v: number, _n: string, item: any) => [fmtFull(v), item.payload.span > 1 ? `в день, в среднем за ${item.payload.span} дн.` : "в день"]} />
+                <Area dataKey="rate" type="monotone" connectNulls stroke="var(--accent)" strokeWidth={2} fill="url(#g-daily)"
+                  dot={{ r: 3, fill: "var(--accent)", stroke: "var(--bg-2)", strokeWidth: 1.5 }} activeDot={{ r: 4 }} isAnimationActive={false} />
                 {d.analysis.updates.map((u) => (
                   <ReferenceLine key={u.date} x={u.date} stroke="var(--info)" strokeDasharray="3 3"
                     label={{ value: u.version, position: "insideTopLeft", fill: "var(--info)", fontSize: 10 }} />
                 ))}
-              </BarChart>
+              </AreaChart>
             ) : metric === "total" ? (
               <AreaChart data={d.snapshots} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 {gradient("g-total", "var(--accent)")}
@@ -270,7 +292,7 @@ function Dynamics({ d }: { d: Detail }) {
       )}
       {metric === "daily" && (
         <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
-          Google обновляет счётчик с задержкой 1–3 дня, поэтому скачки распределены по дням.
+          Google обновляет счётчик раз в 1–3 дня. Точки — дни обновления, в каждой средняя скорость с прошлого обновления.
           {d.analysis.updates.length > 0 && " Пунктир — обновления игры."}
         </p>
       )}
