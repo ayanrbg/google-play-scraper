@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Game, api } from "../api";
-import { Analysis, GrowthDrivers, KeysPanel, Timeline } from "../components/insights";
+import { Analysis, GrowthDrivers, KeysPanel, KeysTeaser, RankBadge, Timeline, useKeysTop10 } from "../components/insights";
 import { BackLink, Empty, Flags, Loader, Meter, Score, Stat } from "../components/ui";
 import { MarkButtons } from "./Radar";
 import { useMe } from "../App";
 import { COLLECTION_LABELS, COUNTRY_NAMES, fmtAccel, fmtAge, fmtDate, fmtFull, fmtN, fmtRating, storeUrl } from "../format";
+
+type KnownKeyword = { id: number; term: string; country: string; demand: number; opportunity: number | null; competition: number | null; rank: number };
 
 type Detail = {
   app: any;
@@ -20,7 +22,7 @@ type Detail = {
   score_history: { date: string; trend_score: number; v7: number | null }[];
   developer: { developer_id: string; name: string; app_count: number | null } | null;
   developer_apps: { app_id: string; title: string; icon_url: string; installs: number; released: string; tracked: boolean }[];
-  keywords: { id: number; term: string; country: string; demand: number; opportunity: number | null; competition: number | null; rank: number }[];
+  keywords: KnownKeyword[];
   analysis: Analysis;
   mark: { status: string | null; note: string | null } | null;
   flag_labels: Record<string, string>;
@@ -34,17 +36,43 @@ const PART_LABELS: Record<string, [string, number]> = {
   quality: ["Качество", 10],
 };
 
-const axis = { stroke: "var(--faint)", fontSize: 11, fontFamily: "var(--font-mono)" };
+type Tab = "overview" | "keys" | "charts" | "studio";
+
+// ----------------------------- chart styling -----------------------------
+
+const tick = { fill: "var(--faint)", fontSize: 11, fontFamily: "var(--font-mono)" };
 const tooltipStyle = {
-  contentStyle: { background: "var(--bg-2)", border: "1px solid var(--line-strong)", borderRadius: 8, fontSize: 12 },
-  labelStyle: { color: "var(--muted)" },
+  contentStyle: { background: "var(--bg-2)", border: "1px solid var(--line-strong)", borderRadius: 8, fontSize: 12, boxShadow: "var(--shadow)" },
+  labelStyle: { color: "var(--muted)", marginBottom: 2 },
+  itemStyle: { color: "var(--text)", padding: 0 },
+  cursor: { fill: "var(--accent-soft)", stroke: "var(--line-strong)" },
 };
-const shortDate = (d: string) => new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+const shortDate = (d: string) => new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "");
+const fmtTick = (v: number) => fmtN(v).replace(/\.$/, "");
+
+const grid = <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />;
+const xAxis = <XAxis dataKey="date" tickFormatter={shortDate} tick={tick} axisLine={false} tickLine={false} minTickGap={28} tickMargin={6} />;
+const yAxis = (props: Record<string, any> = {}) => (
+  <YAxis tickFormatter={fmtTick} tick={tick} axisLine={false} tickLine={false} width={52} tickCount={4} {...props} />
+);
+const gradient = (id: string, color: string) => (
+  <defs>
+    <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stopColor={color} stopOpacity={0.32} />
+      <stop offset="100%" stopColor={color} stopOpacity={0} />
+    </linearGradient>
+  </defs>
+);
+
+// ----------------------------- page -----------------------------
 
 export default function GamePage() {
   const { id = "" } = useParams();
   const me = useMe();
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const tab = (params.get("tab") as Tab) || "overview";
+  const tabsRef = useRef<HTMLDivElement>(null);
   const q = useQuery({ queryKey: ["game", id], queryFn: () => api<Detail>(`/games/${encodeURIComponent(id)}`) });
   const [note, setNote] = useState("");
   useEffect(() => setNote(q.data?.mark?.note || ""), [q.data?.mark?.note]);
@@ -58,10 +86,26 @@ export default function GamePage() {
     },
   });
 
+  const top10 = useKeysTop10(id, q.data?.keywords || []);
+  const setTab = (t: Tab) => {
+    setParams(t === "overview" ? {} : { tab: t }, { replace: true });
+    const el = tabsRef.current;
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start" });
+  };
+
   if (q.isLoading) return <Loader />;
   if (!q.data) return <Empty title="Игра не найдена" />;
-  const { app, metrics: m } = q.data;
-  const status = q.data.mark?.status || null;
+  const d = q.data;
+  const { app, metrics: m } = d;
+  const status = d.mark?.status || null;
+  const chartCountries = new Set(Object.values(d.charts_latest).flatMap((c) => Object.keys(c.countries))).size;
+
+  const tabs: { key: Tab; label: string; badge?: ReactNode; hint?: string }[] = [
+    { key: "overview", label: "Обзор" },
+    { key: "keys", label: "Поиск и ключи", badge: top10 || undefined, hint: top10 ? `В топ-10 поиска: ${top10} пар запрос × страна` : undefined },
+    { key: "charts", label: "Чарты", badge: chartCountries || undefined, hint: chartCountries ? `В чартах ${chartCountries} стран` : undefined },
+    { key: "studio", label: "Студия", badge: d.developer_apps.length || undefined },
+  ];
 
   return (
     <>
@@ -98,7 +142,7 @@ export default function GamePage() {
         )}
       </div>
 
-      <div className="stats" style={{ marginBottom: 16 }}>
+      <div className="stats" style={{ marginBottom: 8 }}>
         <Stat label="Установки" value={fmtN(app.installs)} note={app.pre_register ? "пре-регистраций" : fmtFull(app.installs)} />
         <Stat label="В день (7 дн)" value={fmtN(m?.v7)} note={m?.v7_prev ? `неделей раньше ${fmtN(m.v7_prev)}` : "история копится"} />
         <Stat label="Ускорение" value={fmtAccel(m?.accel)} />
@@ -107,115 +151,254 @@ export default function GamePage() {
         <Stat label="Страны в чартах" value={(m?.new_countries || 0) + (m?.top_countries || 0)} note={m?.trending_countries ? `Movers: ${m.trending_countries}` : undefined} />
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <GrowthDrivers analysis={q.data.analysis} />
-        <Timeline items={q.data.analysis.timeline} />
+      <div className="page-tabs" ref={tabsRef} role="tablist">
+        {tabs.map((t) => (
+          <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)} title={t.hint}>
+            {t.label}
+            {t.badge !== undefined && <span className="pill">{t.badge}</span>}
+          </button>
+        ))}
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Установки в день</h3>
-          {q.data.daily.length > 1 ? (
-            <div className="chart-box">
-              <ResponsiveContainer>
-                <BarChart data={q.data.daily}>
-                  <CartesianGrid stroke="var(--line)" vertical={false} />
-                  <XAxis dataKey="date" tickFormatter={shortDate} {...axis} />
-                  <YAxis tickFormatter={(v) => fmtN(v)} {...axis} width={48} />
-                  <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "установок"]} />
-                  <Bar dataKey="installs" fill="var(--accent)" radius={[3, 3, 0, 0]} />
-                  {q.data.analysis.updates.map((u) => (
-                    <ReferenceLine key={u.date} x={u.date} stroke="var(--info)" strokeDasharray="3 3"
-                      label={{ value: u.version, position: "insideTopLeft", fill: "var(--info)", fontSize: 10 }} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <Empty title="История копится">Нужно хотя бы 2 дня наблюдений.</Empty>
-          )}
-          <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
-            Google обновляет счётчик с задержкой 1–3 дня: скачки распределены по дням, последние дни без обновления не показаны.
-            {q.data.analysis.updates.length > 0 && " Пунктир — обновления игры."}
-          </p>
-        </div>
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Всего установок</h3>
-          {q.data.snapshots.length > 1 ? (
-            <div className="chart-box">
-              <ResponsiveContainer>
-                <AreaChart data={q.data.snapshots}>
-                  <CartesianGrid stroke="var(--line)" vertical={false} />
-                  <XAxis dataKey="date" tickFormatter={shortDate} {...axis} />
-                  <YAxis tickFormatter={(v) => fmtN(v)} {...axis} width={48} />
-                  <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "всего"]} />
-                  <Area dataKey="installs" stroke="var(--accent)" fill="var(--accent-soft)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <Empty title="История копится" />
-          )}
-        </div>
-      </div>
+      {tab === "overview" && (
+        <>
+          <KeysTeaser appId={app.app_id} known={d.keywords} onOpen={() => setTab("keys")} />
 
-      <div className={me ? "grid-3" : "grid-2"} style={{ marginBottom: 16 }}>
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Из чего Trend Score</h3>
-          {m ? (
-            <div className="parts">
-              {Object.entries(PART_LABELS).map(([k, [label, max]]) => (
-                <div className="part" key={k}>
-                  <span className="muted">{label}</span>
-                  <Meter value={Number(m.score_parts?.[k] || 0)} max={max} />
-                  <span className="num r">
-                    {Number(m.score_parts?.[k] || 0).toFixed(0)}/{max}
-                  </span>
-                </div>
-              ))}
-              {m.score_parts?.estimated && <p className="faint" style={{ fontSize: 12, margin: 0 }}>Скорость оценена по среднему за жизнь игры: недельной истории пока нет.</p>}
-            </div>
-          ) : (
-            <p className="muted">Игра не на радаре (старше года или без роста).</p>
-          )}
-        </div>
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Динамика Score</h3>
-          {q.data.score_history.length > 1 ? (
-            <div style={{ height: 160 }}>
-              <ResponsiveContainer>
-                <LineChart data={q.data.score_history}>
-                  <XAxis dataKey="date" tickFormatter={shortDate} {...axis} />
-                  <YAxis domain={[0, 100]} {...axis} width={30} />
-                  <Tooltip {...tooltipStyle} labelFormatter={shortDate} />
-                  <Line dataKey="trend_score" stroke="var(--accent)" dot={false} strokeWidth={2} name="Score" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="muted">Появится через несколько дней наблюдений.</p>
-          )}
-        </div>
-        {me && (
-          <div className="panel panel-pad">
-            <h3 className="panel-title">Заметка команды</h3>
-            <div className="note-box">
-              <textarea className="input" rows={5} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Что понравилось, какую механику взять, риски…" />
-              <button className="btn sm" onClick={() => mark.mutate({ status, note: note || null })} disabled={mark.isPending}>
-                Сохранить
-              </button>
-            </div>
+          <div className="grid-2 wide-left" style={{ marginBottom: 16 }}>
+            <Dynamics d={d} />
+            <ScoreParts m={m} />
           </div>
-        )}
-      </div>
 
-      <div className="panel panel-pad" style={{ marginBottom: 16 }}>
-        <h3 className="panel-title">
-          Где в чартах <span className="faint" style={{ fontWeight: 400 }}>· {fmtDate(q.data.charts_date)}</span>
-        </h3>
-        {Object.keys(q.data.charts_latest).length ? (
+          <div className="grid-2" style={{ marginBottom: 16, alignItems: "start" }}>
+            <GrowthDrivers analysis={d.analysis} />
+            <Timeline items={d.analysis.timeline} />
+          </div>
+
+          {me && (
+            <div className="panel panel-pad">
+              <h3 className="panel-title">Заметка команды</h3>
+              <div className="note-box">
+                <textarea className="input" rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Что понравилось, какую механику взять, риски…" />
+                <button className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => mark.mutate({ status, note: note || null })} disabled={mark.isPending}>
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "keys" && (
+        <>
+          <KeysPanel appId={app.app_id} />
+          <KnownPositions keywords={d.keywords} />
+        </>
+      )}
+
+      {tab === "charts" && <Charts d={d} />}
+
+      {tab === "studio" && <Studio d={d} />}
+    </>
+  );
+}
+
+// ----------------------------- overview -----------------------------
+
+type Metric = "daily" | "total" | "score";
+
+const METRICS: { key: Metric; label: string }[] = [
+  { key: "daily", label: "В день" },
+  { key: "total", label: "Всего" },
+  { key: "score", label: "Trend Score" },
+];
+
+/** One compact chart with a switch instead of a wall of big ones. */
+function Dynamics({ d }: { d: Detail }) {
+  const [metric, setMetric] = useState<Metric>("daily");
+  const enough = { daily: d.daily.length > 1, total: d.snapshots.length > 1, score: d.score_history.length > 1 }[metric];
+  return (
+    <div className="panel panel-pad">
+      <div className="panel-head">
+        <div>
+          <h3 className="panel-title">Установки</h3>
+          <p>{{ daily: "Сколько игру скачивают в день", total: "Счётчик установок в Google Play", score: "Как менялась оценка тренда" }[metric]}</p>
+        </div>
+        <div className="seg auto">
+          {METRICS.map((x) => (
+            <button key={x.key} className={metric === x.key ? "on" : ""} onClick={() => setMetric(x.key)}>{x.label}</button>
+          ))}
+        </div>
+      </div>
+      {enough ? (
+        <div className="chart-box">
+          <ResponsiveContainer>
+            {metric === "daily" ? (
+              <BarChart data={d.daily} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                {grid}
+                {xAxis}
+                {yAxis()}
+                <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "установок"]} />
+                <Bar dataKey="installs" fill="var(--accent)" fillOpacity={0.85} radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false} />
+                {d.analysis.updates.map((u) => (
+                  <ReferenceLine key={u.date} x={u.date} stroke="var(--info)" strokeDasharray="3 3"
+                    label={{ value: u.version, position: "insideTopLeft", fill: "var(--info)", fontSize: 10 }} />
+                ))}
+              </BarChart>
+            ) : metric === "total" ? (
+              <AreaChart data={d.snapshots} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                {gradient("g-total", "var(--accent)")}
+                {grid}
+                {xAxis}
+                {yAxis({ domain: ["auto", "auto"] })}
+                <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "всего"]} />
+                <Area dataKey="installs" stroke="var(--accent)" strokeWidth={2} fill="url(#g-total)" isAnimationActive={false} />
+              </AreaChart>
+            ) : (
+              <AreaChart data={d.score_history} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                {gradient("g-score", "var(--accent)")}
+                {grid}
+                {xAxis}
+                {yAxis({ domain: [0, 100], ticks: [0, 25, 50, 75, 100], width: 32 })}
+                <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [Math.round(v), "Trend Score"]} />
+                <Area dataKey="trend_score" stroke="var(--accent)" strokeWidth={2} fill="url(#g-score)" isAnimationActive={false} />
+              </AreaChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <Empty title="История копится">Нужно хотя бы 2 дня наблюдений.</Empty>
+      )}
+      {metric === "daily" && (
+        <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
+          Google обновляет счётчик с задержкой 1–3 дня, поэтому скачки распределены по дням.
+          {d.analysis.updates.length > 0 && " Пунктир — обновления игры."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ScoreParts({ m }: { m: Game | null }) {
+  return (
+    <div className="panel panel-pad">
+      <div className="panel-head">
+        <div>
+          <h3 className="panel-title">Из чего Trend Score</h3>
+          <p>Оценка тренда от 0 до 100</p>
+        </div>
+        {m && <Score value={m.trend_score} />}
+      </div>
+      {m ? (
+        <div className="parts">
+          {Object.entries(PART_LABELS).map(([k, [label, max]]) => (
+            <div className="part" key={k}>
+              <span className="muted">{label}</span>
+              <Meter value={Number(m.score_parts?.[k] || 0)} max={max} />
+              <span className="num r">
+                {Number(m.score_parts?.[k] || 0).toFixed(0)}/{max}
+              </span>
+            </div>
+          ))}
+          {m.score_parts?.estimated && <p className="faint" style={{ fontSize: 12, margin: 0 }}>Скорость оценена по среднему за жизнь игры: недельной истории пока нет.</p>}
+        </div>
+      ) : (
+        <p className="muted">Игра не на радаре (старше года или без роста).</p>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------- search -----------------------------
+
+/** Positions the daily keyword monitoring already knows, one row per phrase with all its countries. */
+function KnownPositions({ keywords }: { keywords: KnownKeyword[] }) {
+  const [all, setAll] = useState(false);
+  const groups = useMemo(() => {
+    const by = new Map<string, KnownKeyword[]>();
+    for (const k of keywords) by.set(k.term, [...(by.get(k.term) || []), k]);
+    return [...by.entries()]
+      .map(([term, ks]) => ({ term, ks: ks.sort((a, b) => a.rank - b.rank), best: Math.min(...ks.map((k) => k.rank)), demand: Math.max(...ks.map((k) => k.demand)) }))
+      .sort((a, b) => a.best - b.best || b.demand - a.demand);
+  }, [keywords]);
+  const shown = all ? groups : groups.slice(0, 10);
+  return (
+    <div className="panel panel-pad">
+      <div className="panel-head">
+        <div>
+          <h3 className="panel-title">Позиции из ежедневного мониторинга</h3>
+          <p>Запросы, которые мы и так проверяем каждый день, и место игры по ним в каждой стране.</p>
+        </div>
+      </div>
+      {groups.length ? (
+        <>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Запрос</th>
+                  <th className="r">Лучшее место</th>
+                  <th className="r" title="Как часто ищут: 100 — Google подсказывает запрос уже после пары букв">Спрос</th>
+                  <th>По странам</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((g) => (
+                  <tr key={g.term}>
+                    <td><Link className="link" to={`/niches/${g.ks[0].id}`}>{g.term}</Link></td>
+                    <td className="r"><RankBadge rank={g.best} /></td>
+                    <td className="r">
+                      <div className="demand"><Meter value={g.demand} /><span className="num">{Math.round(g.demand)}</span></div>
+                    </td>
+                    <td>
+                      <div className="country-grid" style={{ flexWrap: "nowrap" }}>
+                        {g.ks.slice(0, 8).map((k) => (
+                          <span key={k.country} className="cc" title={COUNTRY_NAMES[k.country] || k.country}>
+                            {k.country.toUpperCase()}<b>#{k.rank}</b>
+                          </span>
+                        ))}
+                        {g.ks.length > 8 && <span className="faint" style={{ fontSize: 12 }}>+{g.ks.length - 8}</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {groups.length > shown.length && (
+            <button className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setAll(true)}>
+              Показать все запросы ({groups.length})
+            </button>
+          )}
+        </>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>По отслеживаемым запросам игру пока не нашли в поиске.</p>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------- charts -----------------------------
+
+const LINES: { key: string; name: string; color: string }[] = [
+  { key: "top_new_free", name: "Top New", color: "var(--accent)" },
+  { key: "top_free", name: "Top Free", color: "var(--info)" },
+  { key: "trending", name: "Movers", color: "var(--warn)" },
+];
+
+function Charts({ d }: { d: Detail }) {
+  const lines = LINES.filter((l) => d.chart_history.some((r) => r[l.key]));
+  return (
+    <div className="stack">
+      <div className="panel panel-pad">
+        <div className="panel-head">
+          <div>
+            <h3 className="panel-title">Где в чартах сейчас</h3>
+            <p>Место игры в чартах Google Play по странам{d.charts_date ? `, ${fmtDate(d.charts_date)}` : ""}</p>
+          </div>
+        </div>
+        {Object.keys(d.charts_latest).length ? (
           <div className="stack">
-            {Object.entries(q.data.charts_latest).map(([coll, c]) => (
+            {Object.entries(d.charts_latest).map(([coll, c]) => (
               <div key={coll}>
                 <div className="label">
                   {COLLECTION_LABELS[coll] || coll} · {Object.keys(c.countries).length} стран
@@ -224,7 +407,7 @@ export default function GamePage() {
                   {Object.entries(c.countries)
                     .sort((a, b) => a[1] - b[1])
                     .map(([cc, rank]) => (
-                      <span key={cc} className="cc" title={COUNTRY_NAMES[cc] || cc}>
+                      <span key={cc} className={`cc ${rank <= 10 ? "hot" : ""}`} title={COUNTRY_NAMES[cc] || cc}>
                         {cc.toUpperCase()}
                         <b>#{rank}</b>
                       </span>
@@ -234,87 +417,79 @@ export default function GamePage() {
             ))}
           </div>
         ) : (
-          <p className="muted">Сейчас нет в чартах.</p>
+          <p className="muted" style={{ margin: 0 }}>Сейчас нет в чартах.</p>
         )}
-        {q.data.chart_history.length > 1 && (
-          <div style={{ height: 160, marginTop: 16 }}>
+      </div>
+      {d.chart_history.length > 1 && lines.length > 0 && (
+        <div className="panel panel-pad">
+          <div className="panel-head">
+            <div>
+              <h3 className="panel-title">В скольких странах в чартах</h3>
+              <p>Число стран по дням, отдельно для каждого чарта</p>
+            </div>
+            <div className="legend">
+              {lines.map((l) => <span key={l.key}><i style={{ background: l.color }} />{l.name}</span>)}
+            </div>
+          </div>
+          <div className="chart-box">
             <ResponsiveContainer>
-              <LineChart data={q.data.chart_history}>
-                <XAxis dataKey="date" tickFormatter={shortDate} {...axis} />
-                <YAxis {...axis} width={30} allowDecimals={false} />
-                <Tooltip {...tooltipStyle} labelFormatter={shortDate} />
-                <Line dataKey="top_new_free" name="Top New" stroke="var(--accent)" dot={false} strokeWidth={2} />
-                <Line dataKey="top_free" name="Top Free" stroke="var(--info)" dot={false} strokeWidth={2} />
-                <Line dataKey="trending" name="Movers" stroke="var(--warn)" dot={false} strokeWidth={2} />
+              <LineChart data={d.chart_history} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                {grid}
+                {xAxis}
+                {yAxis({ width: 32, allowDecimals: false })}
+                <Tooltip {...tooltipStyle} cursor={{ stroke: "var(--line-strong)" }} labelFormatter={shortDate} formatter={(v: number, name: string) => [`${v} стран`, name]} />
+                {lines.map((l) => (
+                  <Line key={l.key} dataKey={l.key} name={l.name} stroke={l.color} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>
-        )}
-      </div>
-
-      <KeysPanel appId={app.app_id} />
-
-      <div className="grid-2">
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Студия: {q.data.developer?.name || "—"}</h3>
-          {q.data.developer?.app_count ? <p className="muted" style={{ marginTop: -6 }}>Приложений на странице разработчика: {q.data.developer.app_count}</p> : null}
-          {q.data.developer_apps.length ? (
-            <div className="scroll-x">
-            <table className="data">
-              <tbody>
-                {q.data.developer_apps.map((a) => (
-                  <tr key={a.app_id}>
-                    <td>
-                      <Link to={`/game/${encodeURIComponent(a.app_id)}`} className="app-cell" style={{ minWidth: 0 }}>
-                        {a.icon_url ? <img className="app-icon" src={a.icon_url} alt="" loading="lazy" /> : <div className="app-icon" />}
-                        <span className="app-title">{a.title}</span>
-                      </Link>
-                    </td>
-                    <td className="r num">{fmtN(a.installs)}</td>
-                    <td className="r muted">{fmtDate(a.released)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          ) : (
-            <p className="muted">Других игр студии пока не видели.</p>
-          )}
         </div>
-        <div className="panel panel-pad">
-          <h3 className="panel-title">Ключевые слова, по которым находится</h3>
-          {q.data.keywords.length ? (
-            <div className="scroll-x">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Запрос</th>
-                  <th>Рынок</th>
-                  <th className="r">Позиция</th>
-                  <th className="r">Спрос</th>
-                  <th className="r">Возможность</th>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------- studio -----------------------------
+
+function Studio({ d }: { d: Detail }) {
+  return (
+    <div className="panel panel-pad">
+      <div className="panel-head">
+        <div>
+          <h3 className="panel-title">Студия: {d.developer?.name || "—"}</h3>
+          {d.developer?.app_count ? <p>Приложений на странице разработчика: {d.developer.app_count}</p> : null}
+        </div>
+      </div>
+      {d.developer_apps.length ? (
+        <div className="scroll-x">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Игра</th>
+                <th className="r">Установки</th>
+                <th className="r">Релиз</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.developer_apps.map((a) => (
+                <tr key={a.app_id}>
+                  <td>
+                    <Link to={`/game/${encodeURIComponent(a.app_id)}`} className="app-cell" style={{ minWidth: 0 }}>
+                      {a.icon_url ? <img className="app-icon" src={a.icon_url} alt="" loading="lazy" /> : <div className="app-icon" />}
+                      <span className="app-title">{a.title}</span>
+                    </Link>
+                  </td>
+                  <td className="r num">{fmtN(a.installs)}</td>
+                  <td className="r muted">{fmtDate(a.released)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {q.data.keywords.map((k) => (
-                  <tr key={k.id}>
-                    <td>
-                      <Link className="link" to={`/niches/${k.id}`}>{k.term}</Link>
-                    </td>
-                    <td className="muted">{k.country.toUpperCase()}</td>
-                    <td className="r num">#{k.rank}</td>
-                    <td className="r num">{Math.round(k.demand)}</td>
-                    <td className="r num">{k.opportunity !== null ? Math.round(k.opportunity) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          ) : (
-            <p className="muted">Пока не найдена в поиске по отслеживаемым запросам.</p>
-          )}
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
-    </>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>Других игр студии пока не видели.</p>
+      )}
+    </div>
   );
 }
