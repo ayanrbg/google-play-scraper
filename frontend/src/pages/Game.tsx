@@ -53,7 +53,7 @@ const fmtTick = (v: number) => fmtN(v).replace(/\.$/, "");
 const grid = <CartesianGrid stroke="var(--line)" strokeDasharray="2 4" vertical={false} />;
 const xAxis = <XAxis dataKey="date" tickFormatter={shortDate} tick={tick} axisLine={false} tickLine={false} minTickGap={28} tickMargin={6} />;
 const yAxis = (props: Record<string, any> = {}) => (
-  <YAxis tickFormatter={fmtTick} tick={tick} axisLine={false} tickLine={false} width={52} tickCount={4} {...props} />
+  <YAxis tickFormatter={fmtTick} tick={tick} axisLine={false} tickLine={false} width={62} tickCount={4} {...props} />
 );
 const gradient = (id: string, color: string) => (
   <defs>
@@ -212,17 +212,20 @@ const METRICS: { key: Metric; label: string }[] = [
   { key: "score", label: "Trend Score" },
 ];
 
-/** Installs per day, measured only where Google refreshed the counter: each point is the average since the
- * previous refresh. Days in between have no reading of their own, so the line just connects the points
- * instead of drawing the flat steps a day-by-day split would give. */
+/** Installs measured only where Google refreshed the counter: the counter itself (total) and the average
+ * daily speed since the previous refresh (rate). Days in between have no reading of their own, so the line
+ * just connects the points instead of drawing the flat steps the raw counter or a day-by-day split would give. */
 function installRates(snapshots: Detail["snapshots"]) {
   let last: { date: string; installs: number } | null = null;
   return snapshots.map((s) => {
-    const point = { date: s.date, rate: null as number | null, span: 0 };
-    if (!last) last = s;
-    else if (s.installs > last.installs) {
+    const point = { date: s.date, rate: null as number | null, total: null as number | null, span: 0 };
+    if (!last) {
+      last = s;
+      point.total = s.installs;
+    } else if (s.installs > last.installs) {
       const span = Math.max(1, Math.round((Date.parse(s.date) - Date.parse(last.date)) / 86400000));
       point.rate = Math.round((s.installs - last.installs) / span);
+      point.total = s.installs;
       point.span = span;
       last = s;
     }
@@ -234,7 +237,7 @@ function installRates(snapshots: Detail["snapshots"]) {
 function Dynamics({ d }: { d: Detail }) {
   const [metric, setMetric] = useState<Metric>("daily");
   const rates = useMemo(() => installRates(d.snapshots), [d.snapshots]);
-  const enough = { daily: rates.filter((r) => r.rate !== null).length > 1, total: d.snapshots.length > 1, score: d.score_history.length > 1 }[metric];
+  const enough = { daily: rates.filter((r) => r.rate !== null).length > 1, total: rates.filter((r) => r.total !== null).length > 1, score: d.score_history.length > 1 }[metric];
   return (
     <div className="panel panel-pad">
       <div className="panel-head">
@@ -267,13 +270,14 @@ function Dynamics({ d }: { d: Detail }) {
                 ))}
               </AreaChart>
             ) : metric === "total" ? (
-              <AreaChart data={d.snapshots} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <AreaChart data={rates} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 {gradient("g-total", "var(--accent)")}
                 {grid}
                 {xAxis}
                 {yAxis({ domain: ["auto", "auto"] })}
                 <Tooltip {...tooltipStyle} labelFormatter={shortDate} formatter={(v: number) => [fmtFull(v), "всего"]} />
-                <Area dataKey="installs" stroke="var(--accent)" strokeWidth={2} fill="url(#g-total)" isAnimationActive={false} />
+                <Area dataKey="total" type="monotone" connectNulls stroke="var(--accent)" strokeWidth={2} fill="url(#g-total)"
+                  dot={{ r: 3, fill: "var(--accent)", stroke: "var(--bg-2)", strokeWidth: 1.5 }} activeDot={{ r: 4 }} isAnimationActive={false} />
               </AreaChart>
             ) : (
               <AreaChart data={d.score_history} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
@@ -289,6 +293,11 @@ function Dynamics({ d }: { d: Detail }) {
         </div>
       ) : (
         <Empty title="История копится">Нужно хотя бы 2 дня наблюдений.</Empty>
+      )}
+      {metric === "total" && (
+        <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
+          Google обновляет счётчик раз в 1–3 дня. Точки — дни обновления, между ними линия просто соединяет замеры.
+        </p>
       )}
       {metric === "daily" && (
         <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
