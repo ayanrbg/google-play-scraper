@@ -6,13 +6,14 @@ import time
 from datetime import date, datetime, timedelta
 from statistics import median
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from playtrend import analysis
+from playtrend.api import ratelimit
 from playtrend.api.deps import Ctx, current, feature, get_db, viewer
 from playtrend.catalog import GENRE_NAMES_RU
 from playtrend.models import (
@@ -20,6 +21,7 @@ from playtrend.models import (
 )
 from playtrend.pipeline.brand import FLAG_LABELS
 from playtrend.pipeline.metrics import change_points, interpolate_daily
+from playtrend.settings import get_settings
 
 router = APIRouter(prefix="/api")
 
@@ -317,9 +319,10 @@ def game_keys(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(get
 
 
 @router.post("/games/{app_id}/keys")
-def request_keys(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
+def request_keys(app_id: str, request: Request, ctx: Ctx = Depends(viewer), db: Session = Depends(get_db)):
     """Queue a keys report; the worker builds it (the API itself never contacts Google).
-    Open to guests too: a report is rebuilt at most once a day and the queue is capped."""
+    Open to guests too: a report is rebuilt at most once a day, the queue is capped, and guests have
+    a per-IP limit plus a shared daily budget so bots cannot burn the proxy traffic."""
     if not ctx.plan.get("keywords"):
         raise HTTPException(402, "plan_feature:keywords")
     if not db.get(App, app_id):
@@ -332,6 +335,16 @@ def request_keys(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(
         raise HTTPException(409, "keys_fresh")
     if db.scalar(select(func.count()).select_from(KeysReport).where(KeysReport.status == "pending")) >= KEYS_QUEUE_MAX:
         raise HTTPException(429, "keys_queue_full")
+    if not ctx.user:
+        ip = ratelimit.client_ip(request)
+        wait = ratelimit.guest_keys_wait(ip)
+        if wait:
+            raise HTTPException(429, "rate_limited", headers={"Retry-After": str(wait)})
+        guest_today = db.scalar(select(func.count()).select_from(KeysReport).where(
+            KeysReport.requested_by.is_(None), KeysReport.requested_at > datetime.utcnow() - timedelta(days=1)))
+        if guest_today >= get_settings().guest_keys_per_day:
+            raise HTTPException(429, "keys_guest_budget")
+        ratelimit.guest_keys_record(ip)
     if r is None:
         r = KeysReport(app_id=app_id)
         db.add(r)

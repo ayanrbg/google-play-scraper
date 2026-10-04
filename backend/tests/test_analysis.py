@@ -264,13 +264,18 @@ def test_keys_report_end_to_end(client, monkeypatch):  # noqa: F811
     assert client.post("/api/games/my.game/keys").status_code == 409
 
 
-def test_keys_requests_are_limited_per_ip():
+def test_guest_keys_limited_per_ip_per_hour_and_day():
     from playtrend.api import ratelimit
-    for i in range(5):
-        assert ratelimit.check("1.2.3.4", f"/api/games/g{i}/keys", "POST", now=100) is None
-    assert ratelimit.check("1.2.3.4", "/api/games/g9/keys", "POST", now=100) > 0
-    assert ratelimit.check("1.2.3.4", "/api/games/g9/mark", "PUT", now=100) is None
-    assert ratelimit.check("1.2.3.4", "/api/games/g9/keys", "GET", now=100) is None
+    t = 0.0
+    for _ in range(12):                                  # 5 an hour, then wait the hour out
+        while ratelimit.guest_keys_wait("1.2.3.4", now=t):
+            t += 600
+        ratelimit.guest_keys_record("1.2.3.4", now=t)
+    assert t < 3 * 3600
+    assert ratelimit.guest_keys_wait("1.2.3.4", now=t + 3600) > 0      # 12 a day
+    assert ratelimit.guest_keys_wait("5.6.7.8", now=t) is None          # other IPs unaffected
+    assert ratelimit.guest_keys_wait("1.2.3.4", now=24 * 3600 + 1) is None
+    assert ratelimit.check("1.2.3.4", "/api/games/g9/keys", "POST", now=t) is None   # not the generic rule
 
 
 def test_game_page_analysis_and_timeline(client):  # noqa: F811

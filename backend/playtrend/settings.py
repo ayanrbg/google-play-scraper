@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     admin_email: str | None = None
     admin_password: str | None = None
     cookie_secure: bool = False
+    # Keys reports guests (not signed in) may order per day, all IPs together: each costs ~500 proxy requests
+    guest_keys_per_day: int = 40
 
     # Scraping pace. Google throttles by IP, so keep this polite.
     requests_per_second: float = 2.0   # from the server's own IP

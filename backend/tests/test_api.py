@@ -284,3 +284,26 @@ def test_hidden_gems(client):
     assert items["gem"]["chart_countries_any"] == 2
     only = client.get("/api/games", params={"hidden": "true"}).json()["items"]
     assert [g["app_id"] for g in only] == ["gem"]
+
+
+def test_guest_keys_limits(client, monkeypatch):
+    from playtrend.api import ratelimit
+    from playtrend.models import KeysReport
+    from playtrend.settings import get_settings
+    for i in range(8):
+        add_game(f"g{i}", f"Game {i}", "Dev", 20, [1000, 2000])
+    anon = TestClient(app)
+    # only queued reports count: re-ordering one that is already in the queue is free
+    for _ in range(3):
+        assert anon.post("/api/games/g0/keys").status_code == 200
+    codes = [anon.post(f"/api/games/g{i}/keys").status_code for i in range(1, 6)]
+    assert codes == [200, 200, 200, 200, 429]                           # 5 per hour from one IP
+    assert client.post("/api/games/g5/keys").status_code == 200        # signed-in users are not limited
+    assert ratelimit.guest_keys_wait("testclient", now=10**9) is None   # the hour passes...
+    ratelimit._hits.clear()
+    monkeypatch.setattr(get_settings(), "guest_keys_per_day", 5)        # ...but all guests share a daily budget
+    assert anon.post("/api/games/g6/keys").json()["detail"] == "keys_guest_budget"
+    with session_scope() as s:
+        for r in s.query(KeysReport).filter(KeysReport.requested_by.is_(None)):
+            r.requested_at -= timedelta(days=2)
+    assert anon.post("/api/games/g6/keys").status_code == 200
