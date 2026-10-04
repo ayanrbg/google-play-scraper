@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
 import { Meter } from "./ui";
-import { COLLECTION_LABELS, COUNTRY_NAMES, fmtDate, fmtDateTime, fmtN } from "../format";
+import { COLLECTION_LABELS, COUNTRY_NAMES, fmtDateTime, fmtN } from "../format";
 
 // ----------------------------- types -----------------------------
 
@@ -90,53 +90,73 @@ const cc = (c: string) => COUNTRY_NAMES[c] || c.toUpperCase();
 // ----------------------------- why it grows -----------------------------
 
 export function GrowthDrivers({ analysis }: { analysis: Analysis }) {
+  const [open, setOpen] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const shown = all ? analysis.drivers : analysis.drivers.filter((d) => d.level > 0);
   const hidden = analysis.drivers.length - shown.length;
   return (
     <div className="panel panel-pad">
-      <h3 className="panel-title">Почему растёт</h3>
-      <p className="verdict">{analysis.verdict}</p>
+      <div className="panel-head">
+        <div>
+          <h3 className="panel-title">
+            Почему растёт{" "}
+            <span className="info-dot" title="Google не раскрывает источники установок: это оценка по тому, что видно снаружи — поиску, чартам, скачкам установок, обновлениям и признакам паблишера.">?</span>
+          </h3>
+          <p>Откуда приходят установки. Нажмите на строку, чтобы увидеть детали.</p>
+        </div>
+      </div>
       <div className="drivers">
-        {shown.map((d) => (
-          <div className={`driver lvl-${d.level}`} key={d.key}>
-            <div className="driver-head">
-              <span className="level-dots" title={d.level_label}>
-                {[1, 2, 3].map((i) => <i key={i} className={i <= d.level ? "on" : ""} />)}
-              </span>
-              <b>{d.name[0].toUpperCase() + d.name.slice(1)}</b>
-              <span className="faint">{d.level_label}</span>
+        {shown.map((d) => {
+          const isOpen = open === d.key;
+          return (
+            <div className={`driver lvl-${d.level}${isOpen ? " open" : ""}`} key={d.key}>
+              <button className="driver-row" onClick={() => setOpen(isOpen ? null : d.key)} aria-expanded={isOpen}>
+                <span className="level-bars" title={d.level_label}>
+                  {[1, 2, 3].map((i) => <i key={i} className={i <= d.level ? "on" : ""} />)}
+                </span>
+                <span className="driver-text">
+                  <b>{d.name[0].toUpperCase() + d.name.slice(1)}</b>
+                  {!isOpen && d.evidence[0] && <span className="driver-sum">{d.evidence[0]}</span>}
+                </span>
+                <span className="chev" aria-hidden>{isOpen ? "−" : "+"}</span>
+              </button>
+              {isOpen && (
+                <ul className="evidence">
+                  {d.evidence.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              )}
+              {d.apps && d.apps.length > 0 && (
+                <div className="mini-apps">
+                  {d.apps.map((a) => (
+                    <Link key={a.app_id} to={`/game/${encodeURIComponent(a.app_id)}`} className="mini-app" title={`Trend Score ${Math.round(a.trend_score)}, ${fmtN(a.v7)}/день`}>
+                      {a.icon_url ? <img src={a.icon_url} alt="" loading="lazy" /> : <span className="app-icon" />}
+                      <span>{a.title || a.app_id}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
-            <ul className="evidence">
-              {d.evidence.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
-            {d.apps && d.apps.length > 0 && (
-              <div className="mini-apps">
-                {d.apps.map((a) => (
-                  <Link key={a.app_id} to={`/game/${encodeURIComponent(a.app_id)}`} className="mini-app" title={`Trend Score ${Math.round(a.trend_score)}, ${fmtN(a.v7)}/день`}>
-                    {a.icon_url ? <img src={a.icon_url} alt="" loading="lazy" /> : <span className="app-icon" />}
-                    <span>{a.title || a.app_id}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
       {hidden > 0 && (
         <button className="btn ghost sm" onClick={() => setAll(true)}>
-          Остальные факторы ({hidden}): не видно
+          Ещё {hidden} — не видно
         </button>
       )}
       {analysis.facts.length > 0 && (
-        <ul className="facts">
-          {analysis.facts.map((f, i) => <li key={i}>{f}</li>)}
-        </ul>
+        <div className="facts-grid">
+          {analysis.facts.map((f, i) => {
+            const at = f.indexOf(": ");
+            return (
+              <div className="fact" key={i}>
+                <span>{at > 0 ? f.slice(0, at) : ""}</span>
+                <b>{at > 0 ? f.slice(at + 2) : f}</b>
+              </div>
+            );
+          })}
+        </div>
       )}
-      <p className="faint" style={{ fontSize: 12, margin: "10px 0 0" }}>
-        Google не раскрывает источники установок: это оценка по тому, что видно снаружи — поиску, чартам, скачкам
-        установок, обновлениям и признакам паблишера.
-      </p>
     </div>
   );
 }
@@ -189,10 +209,17 @@ function itemText(item: TimelineItem) {
     case "spike": {
       const cause = item.cause === "update" ? `рядом с обновлением ${item.version}`
         : item.cause === "charts" ? `вместе с выходом в чарты (+${item.countries} стран)`
-        : "в сторе причины не видно: реклама, соцсети или подборка Google";
+        : "причина вне стора: реклама, соцсети или подборка";
       return <>Скачок до <b>{fmtN(item.rate)}</b>/день (×{item.ratio}) — {cause}</>;
     }
   }
+}
+
+/** "24 сент", with the year only when it is not this one: fits the timeline's date column in one line. */
+function dayShort(d: string) {
+  const dt = new Date(d);
+  const s = dt.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "");
+  return dt.getFullYear() === new Date().getFullYear() ? s : `${s} ${String(dt.getFullYear()).slice(2)}`;
 }
 
 export function Timeline({ items }: { items: TimelineItem[] }) {
@@ -203,7 +230,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
         <ol className="timeline">
           {items.map((it, i) => (
             <li key={i} className={`tl-${it.kind}${it.first ? " tl-first" : ""}`}>
-              <span className="tl-date">{fmtDate(it.date)}</span>
+              <span className="tl-date">{dayShort(it.date)}</span>
               <span className="tl-text">{itemText(it)}</span>
             </li>
           ))}
