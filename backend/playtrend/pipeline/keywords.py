@@ -15,8 +15,8 @@ from statistics import median
 from sqlalchemy import delete, select
 
 from playtrend.db import session_scope, upsert
-from playtrend.models import App, GameMetrics, Keyword, KeywordRank, SeedState
-from playtrend.pipeline import brand
+from playtrend.models import App, GameMetrics, Keyword, KeywordRank, KeywordSerp, SeedState
+from playtrend.pipeline import brand, entry
 from playtrend.pipeline.common import job_run, log, parallel
 from playtrend.pipeline.details import add_stubs, refresh
 from playtrend.pipeline.keyword_markets import MARKETS, Market
@@ -153,6 +153,10 @@ def save_search_results(s, results: dict[int, list[dict]], today: date):
         s.execute(delete(KeywordRank).where(KeywordRank.keyword_id == kw_id))
         ranks += [{"keyword_id": kw_id, "app_id": r["app_id"], "rank": r["rank"], "date": today} for r in res]
     upsert(s, KeywordRank, ranks, key=["keyword_id", "app_id"])
+    upsert(s, KeywordSerp, [{"keyword_id": kw_id, "date": today, "apps": [r["app_id"] for r in res[:30]]}
+                            for kw_id, res in results.items()], key=["keyword_id", "date"])
+    s.flush()
+    entry.update_keywords(s, list(results), today)
 
 
 # ----------------------------- job -----------------------------

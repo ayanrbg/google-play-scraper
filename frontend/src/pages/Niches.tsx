@@ -8,6 +8,7 @@ import { useMe } from "../App";
 import { fmtN, fmtPct } from "../format";
 
 const SORTS: [string, string, string][] = [
+  ["entry_score", "Вход для новичка", "desc"], ["room", "Свободных мест", "desc"], ["fresh_count", "Свежих в топе", "desc"],
   ["opportunity", "Возможность", "desc"], ["demand", "Спрос", "desc"], ["competition", "Конкуренция", "asc"],
   ["young_share", "Доля молодых", "desc"], ["young_best_installs", "Лучший новичок", "desc"],
   ["top_median_installs", "Медиана топа", "desc"], ["term", "Запрос", "asc"],
@@ -18,7 +19,8 @@ type Market = { country: string; lang: string; label: string; analyzed: number }
 const DEFAULTS: Record<string, string> = {
   country: "us", min_games_share: "0.6",
   q: "", min_demand: "", max_competition: "", min_opportunity: "", min_young_share: "", max_brand_share: "",
-  sort: "opportunity", dir: "desc", page: "1",
+  min_room: "", min_fresh: "",
+  sort: "entry_score", dir: "desc", page: "1",
 };
 
 export default function Niches() {
@@ -54,7 +56,9 @@ export default function Niches() {
           <PageSub>
             Запросы Google Play, которые люди реально ищут. <b>Спрос</b> — по автодополнению: чем короче префикс, при котором
             Google подсказывает запрос, тем он популярнее. <b>Конкуренция</b> — по выдаче: размеры топа, доля брендов, точные
-            совпадения в названиях. <b>Возможность</b> выше, когда в топе уже есть молодые игры: новичок может туда пробиться.
+            совпадения в названиях. <b>Вход</b> — есть ли в топ-10 место для новой игры: сколько мест держат игры, которые
+            новичок может обойти (свежие, молодые с небольшими установками, маленькие, с низким рейтингом, заброшенные; бренды
+            не в счёт), насколько высоко такое место, и растут ли уже пробившиеся новички.
           </PageSub>
         </div>
       </div>
@@ -85,6 +89,12 @@ export default function Niches() {
               <SavedViews page="keywords" current={() => f.all()} onApply={(p) => f.replaceAll(p)} />
             </FGroup>
           )}
+          <FGroup title="Свободных мест в топ-10" hint="которые новичок может занять">
+            <Chips options={[["2", "2+"], ["3", "3+"], ["5", "5+"]]} value={f.get("min_room")} onChange={(v) => f.set({ min_room: v })} />
+          </FGroup>
+          <FGroup title="Свежие игры в топ-10" hint="моложе 3 месяцев">
+            <Chips options={[["1", "1+"], ["2", "2+"], ["3", "3+"]]} value={f.get("min_fresh")} onChange={(v) => f.set({ min_fresh: v })} />
+          </FGroup>
           <FGroup title="Спрос от">
             <Chips options={[["20", "20+"], ["40", "40+"], ["60", "60+"], ["80", "80+"]]} value={f.get("min_demand")} onChange={(v) => f.set({ min_demand: v })} />
           </FGroup>
@@ -123,13 +133,13 @@ export default function Niches() {
                     <b className="grow">{k.term}</b>
                   </div>
                   <div className="card-meters">
-                    <MeterStat label="Возможность" value={k.opportunity} />
+                    <MeterStat label="Вход" value={k.entry_score} />
                     <MeterStat label="Спрос" value={k.demand} />
                     <MeterStat label="Конкуренция" value={k.competition} tone={(k.competition || 0) > 60 ? "bad" : (k.competition || 0) > 40 ? "warn" : undefined} />
                   </div>
                   <div className="card-stats">
-                    <CardStat label="Молодые">{fmtPct(k.young_share)}</CardStat>
-                    <CardStat label="Новичок">{fmtN(k.young_best_installs)}</CardStat>
+                    <CardStat label="Места">{roomText(k)}</CardStat>
+                    <CardStat label="Свежие">{k.fresh_count ?? "—"}</CardStat>
                     <CardStat label="Медиана">{fmtN(k.top_median_installs)}</CardStat>
                     <CardStat label="Бренды">{fmtPct(k.brand_share)}</CardStat>
                   </div>
@@ -142,6 +152,10 @@ export default function Niches() {
                 <thead>
                   <tr>
                     <SortTh label="Запрос" field="term" sort={sort} dir={dir} onSort={sortBy} />
+                    <SortTh label="Вход" field="entry_score" sort={sort} dir={dir} onSort={sortBy} title="Есть ли место для новой игры в топ-10, 0–100" />
+                    <SortTh label="Места" field="room" sort={sort} dir={dir} onSort={sortBy} right title="Мест в топ-10, которые новичок может занять, и самое высокое из них" />
+                    <SortTh label="Свежие" field="fresh_count" sort={sort} dir={dir} onSort={sortBy} right title="Игр моложе 3 месяцев в топ-10" />
+                    <SortTh label="Новички/день" field="entrants_v7" sort={sort} dir={dir} onSort={sortBy} right title="Медианная скорость молодых игр в топ-10, установок в день (растущих из них)" />
                     <SortTh label="Возможность" field="opportunity" sort={sort} dir={dir} onSort={sortBy} />
                     <SortTh label="Спрос" field="demand" sort={sort} dir={dir} onSort={sortBy} />
                     <SortTh label="Конкуренция" field="competition" sort={sort} dir={dir} onSort={sortBy} />
@@ -155,6 +169,18 @@ export default function Niches() {
                   {data.data.items.map((k, i) => (
                     <tr key={k.id} className="clickable" style={{ animationDelay: `${Math.min(i, 20) * 18}ms` }} onClick={() => navigate(`/niches/${k.id}`)}>
                       <td style={{ fontWeight: 600 }}>{k.term}</td>
+                      <td>
+                        <div className="row">
+                          <span className="num" style={{ width: 26 }}>{k.entry_score !== null ? Math.round(k.entry_score) : "—"}</span>
+                          <Meter value={k.entry_score} />
+                        </div>
+                      </td>
+                      <td className="r num">{roomText(k)}</td>
+                      <td className="r num">{k.fresh_count ?? "—"}</td>
+                      <td className="r num">
+                        {fmtN(k.entrants_v7)}
+                        {k.entrants_growing ? <span className="faint"> ({k.entrants_growing})</span> : null}
+                      </td>
                       <td>
                         <div className="row">
                           <span className="num" style={{ width: 26 }}>{k.opportunity !== null ? Math.round(k.opportunity) : "—"}</span>
@@ -188,6 +214,11 @@ export default function Niches() {
       </div>
     </>
   );
+}
+
+export function roomText(k: { room: number | null; room_best: number | null }) {
+  if (k.room === null) return "—";
+  return k.room ? `${k.room}/10 · #${k.room_best}` : "0/10";
 }
 
 function MeterStat({ label, value, tone }: { label: string; value: number | null; tone?: "warn" | "bad" }) {

@@ -102,6 +102,14 @@ export type Keyword = {
   title_match_share: number | null;
   games_share: number | null;
   analyzed_at: string | null;
+  // room for a new game in the top 10 (backend pipeline/entry.py)
+  room: number | null;
+  room_best: number | null;
+  fresh_count: number | null;
+  entrants_growing: number | null;
+  entrants_v7: number | null;
+  churn7: number | null;
+  entry_score: number | null;
 };
 
 export type Page<T> = { total: number; page: number; page_size: number; items: T[]; limited_to?: number | null };

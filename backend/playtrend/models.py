@@ -226,6 +226,15 @@ class Keyword(Base):
     title_match_share: Mapped[float | None] = mapped_column(Float)
     top_apps: Mapped[list] = mapped_column(JSON, default=list)
     games_share: Mapped[float | None] = mapped_column(Float)   # share of games in the top results
+    # Can a new game still get in (pipeline/entry.py): takeable top-10 places, the best of them,
+    # games under 90 days in the top, newcomers growing and their median speed, entries in a week
+    room: Mapped[int | None] = mapped_column(Integer)
+    room_best: Mapped[int | None] = mapped_column(Integer)
+    fresh_count: Mapped[int | None] = mapped_column(Integer)
+    entrants_growing: Mapped[int | None] = mapped_column(Integer)
+    entrants_v7: Mapped[int | None] = mapped_column(Integer)
+    churn7: Mapped[int | None] = mapped_column(Integer)
+    entry_score: Mapped[float | None] = mapped_column(Float, index=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
 
     __table_args__ = (UniqueConstraint("term", "lang", "country"),)
@@ -239,6 +248,15 @@ class KeywordRank(Base):
     app_id: Mapped[str] = mapped_column(String(255), primary_key=True, index=True)
     rank: Mapped[int] = mapped_column(Integer)
     date: Mapped[date] = mapped_column(Date)
+
+
+class KeywordSerp(Base):
+    """Search results of a keyword as seen on a day (top 30 app ids in order): who enters and leaves the top."""
+    __tablename__ = "keyword_serps"
+
+    keyword_id: Mapped[int] = mapped_column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    apps: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class KeysReport(Base):

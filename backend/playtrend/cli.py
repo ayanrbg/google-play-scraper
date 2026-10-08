@@ -2,7 +2,7 @@
 
   migrate                 apply DB migrations + seed brand rules + create first admin
   daily                   run the full daily pipeline once
-  run <job> [...]         run single jobs: charts expand enrich track metrics keywords cleanup
+  run <job> [...]         run single jobs: charts expand enrich track metrics keywords entry cleanup
   keys <app_id>           build the keys report (reverse ASO) of one game now
   worker                  long-running scheduler (runs `daily` once a day at PLAYTREND_DAILY_HOUR_UTC)
   create-user <email> <password> [--superadmin]
@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import delete, select
 
 from playtrend.db import session_scope
-from playtrend.models import ChartDaily, JobRun, ScoreHistory
+from playtrend.models import ChartDaily, JobRun, KeywordSerp, ScoreHistory
 from playtrend.settings import get_settings
 
 log = logging.getLogger("playtrend")
@@ -68,6 +68,7 @@ def cleanup():
             ChartDaily.date < date.today() - timedelta(days=14),
             ChartDaily.app_id.not_in(select(App.app_id).where(App.tracked.is_(True)))))
         s.execute(delete(ScoreHistory).where(ScoreHistory.date < keep))
+        s.execute(delete(KeywordSerp).where(KeywordSerp.date < date.today() - timedelta(days=120)))
         s.execute(delete(JobRun).where(JobRun.started_at < datetime.utcnow() - timedelta(days=90)))
     from playtrend.pipeline.common import prune_logs
     prune_logs(30)
@@ -75,7 +76,7 @@ def cleanup():
 
 
 def jobs():
-    from playtrend.pipeline import charts, details, expand, keywords, metrics
+    from playtrend.pipeline import charts, details, entry, expand, keywords, metrics
     return {
         "charts": charts.run,
         "expand": expand.run,
@@ -83,13 +84,14 @@ def jobs():
         "track": details.track,
         "metrics": metrics.run,
         "keywords": keywords.run,
+        "entry": entry.run,
         "cleanup": cleanup,
         "softlaunch": details.backfill_soft_launch,
     }
 
 
 INTERRUPTED = "прервано перезапуском воркера"
-DAILY_ORDER = ["charts", "expand", "enrich", "track", "metrics", "keywords", "enrich", "metrics", "cleanup"]
+DAILY_ORDER = ["charts", "expand", "enrich", "track", "metrics", "keywords", "enrich", "metrics", "entry", "cleanup"]
 
 
 def daily():

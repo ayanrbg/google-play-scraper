@@ -297,3 +297,41 @@ def test_game_page_analysis_and_timeline(client):  # noqa: F811
     wave = next(d for d in a["drivers"] if d["key"] == "wave")
     assert [x["app_id"] for x in wave["apps"]] == ["wave.game"]
     assert a["verdict"] and a["facts"]
+
+
+def test_room_for_a_new_game_in_search(client):
+    from playtrend.models import KeywordSerp
+    from playtrend.pipeline import entry, keywords
+    def card(app_id, age, installs, dev, score=4.5, updated_days=10):
+        return App(app_id=app_id, title=app_id, developer=dev, developer_id=dev, released=TODAY - timedelta(days=age),
+                   last_updated=TODAY - timedelta(days=updated_days), real_installs=installs, score=score,
+                   ratings=1000, details_at=datetime.utcnow(), is_game=True)
+    with session_scope() as s:
+        s.add_all([
+            card("big.hit", 900, 50_000_000, "Big"),
+            card("fresh.one", 40, 300_000, "A"),             # fresh: newcomers get in now
+            card("young.small", 200, 400_000, "B"),          # young, made it with few installs
+            card("old.dead", 2000, 2_000_000, "C", updated_days=800),   # abandoned
+            card("bad.rated", 1500, 3_000_000, "D", score=3.2),
+            card("king", 1200, 80_000_000, "Supercell"),     # a brand never leaves room
+        ])
+        s.add(App(app_id="stub.only", title="stub"))      # card not fetched yet
+        k = Keyword(term="tower smash", lang="en", country="us", demand=60)
+        s.add(k)
+        s.flush()
+        kid = k.id
+        s.add(KeywordSerp(keyword_id=kid, date=TODAY - timedelta(days=7), apps=["big.hit", "king", "old.dead"]))
+    res = [{"app_id": a, "rank": i + 1, "title": a, "developer": None, "min_installs": 1000, "score": 4.0}
+           for i, a in enumerate(["big.hit", "fresh.one", "king", "young.small", "old.dead", "bad.rated", "stub.only"])]
+    with session_scope() as s:
+        keywords.save_search_results(s, {kid: res}, TODAY)
+    with session_scope() as s:
+        k = s.get(Keyword, kid)
+        assert (k.room, k.room_best, k.fresh_count) == (4, 2, 1)
+        assert k.churn7 == 4 and k.entry_score > 40
+        assert s.get(KeywordSerp, (kid, TODAY)).apps[:2] == ["big.hit", "fresh.one"]
+    r = client.get(f"/api/keywords/{kid}").json()
+    slots = {x["app_id"]: x["slot"] for x in r["results"]}
+    assert slots["king"]["kind"] == "brand" and slots["stub.only"]["kind"] == "unknown"
+    assert slots["old.dead"]["reasons"] == ["abandoned"] and not slots["big.hit"]["takeable"]
+    assert client.get("/api/keywords", params={"min_room": 4, "country": "us"}).json()["total"] == 1

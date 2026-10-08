@@ -7,8 +7,21 @@ import { fmtAge, fmtN, fmtPct, fmtRating } from "../format";
 type Detail = {
   keyword: Keyword;
   results: { rank: number; app_id: string; title: string; developer: string; icon_url: string; genre: string; released: string | null;
-    installs: number | null; rating: number | null; trend_score: number | null; brand_flags: string[] }[];
+    installs: number | null; rating: number | null; trend_score: number | null; brand_flags: string[]; v7: number | null;
+    slot: { kind: string; takeable: boolean; reasons?: string[] } | null }[];
   related: Keyword[];
+};
+
+// Why a top-10 place could go to a new game (or why not)
+const SLOT_LABELS: Record<string, [string, string]> = {
+  fresh: ["свежая", "Моложе 3 месяцев: Google пускает новичков сюда прямо сейчас"],
+  young_small: ["новичок", "Молодая игра попала сюда с небольшими установками: так может и наша"],
+  small: ["маленькая", "Меньше 100 тыс. установок"],
+  low_rating: ["низкий рейтинг", "Рейтинг ниже 3.8: хорошая игра её обойдёт"],
+  abandoned: ["заброшена", "Не обновлялась больше года"],
+  brand: ["бренд", "Издатель или франшиза: это место не взять"],
+  strong: ["сильная", "Большая, живая игра: обойти трудно"],
+  unknown: ["?", "Карточку игры ещё не скачали"],
 };
 
 const ageDays = (d: string | null) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null);
@@ -32,6 +45,11 @@ export default function NichePage() {
         </a>
       </div>
       <div className="stats" style={{ marginBottom: 16 }}>
+        <Stat label="Вход для новичка" value={k.entry_score !== null ? Math.round(k.entry_score) : "—"}
+              note={k.room !== null ? `мест ${k.room}/10${k.room_best ? `, лучшее #${k.room_best}` : ""}` : "ещё не посчитано"} />
+        <Stat label="Свежие в топ-10" value={k.fresh_count ?? "—"} note="моложе 3 месяцев" />
+        <Stat label="Новички растут" value={k.entrants_growing ?? "—"} note={k.entrants_v7 ? `медиана ${fmtN(k.entrants_v7)}/день` : "скорость молодых в топе"} />
+        <Stat label="Вошли за неделю" value={k.churn7 ?? "—"} note={k.churn7 === null ? "история выдачи копится" : "новых игр в топ-10"} />
         <Stat label="Возможность" value={k.opportunity !== null ? Math.round(k.opportunity) : "—"} />
         <Stat label="Спрос" value={Math.round(k.demand)} />
         <Stat label="Конкуренция" value={k.competition !== null ? Math.round(k.competition) : "—"} />
@@ -48,13 +66,14 @@ export default function NichePage() {
                 <th>Игра</th>
                 <th className="r">Возраст</th>
                 <th className="r">Установки</th>
+                <th className="r" title="Установок в день за 7 дней">В день</th>
                 <th className="r">★</th>
-                <th className="r">Score</th>
+                <th title="Может ли новая игра занять это место">Место</th>
               </tr>
             </thead>
             <tbody>
               {q.data.results.map((r) => (
-                <tr key={r.app_id}>
+                <tr key={r.app_id} className={r.slot?.takeable ? "slot-open" : ""}>
                   <td className="num muted">{r.rank}</td>
                   <td>
                     <Link to={`/game/${encodeURIComponent(r.app_id)}`} className="app-cell">
@@ -69,8 +88,9 @@ export default function NichePage() {
                   </td>
                   <td className={`r num ${(ageDays(r.released) ?? 9999) <= 365 ? "good" : ""}`}>{fmtAge(ageDays(r.released))}</td>
                   <td className="r num">{fmtN(r.installs)}</td>
+                  <td className="r num">{fmtN(r.v7)}</td>
                   <td className="r num">{fmtRating(r.rating)}</td>
-                  <td className="r num">{r.trend_score !== null ? Math.round(r.trend_score) : "—"}</td>
+                  <td>{r.slot && <SlotTag slot={r.slot} />}</td>
                 </tr>
               ))}
             </tbody>
@@ -90,5 +110,15 @@ export default function NichePage() {
         </div>
       </div>
     </>
+  );
+}
+
+function SlotTag({ slot }: { slot: { kind: string; takeable: boolean; reasons?: string[] } }) {
+  const kinds = slot.reasons?.length ? slot.reasons : [slot.kind];
+  return (
+    <span className={`slot ${slot.takeable ? "open" : slot.kind}`} title={kinds.map((x) => SLOT_LABELS[x]?.[1] || x).join(". ")}>
+      {slot.takeable ? "✓ " : ""}
+      {kinds.map((x) => SLOT_LABELS[x]?.[0] || x).join(", ")}
+    </span>
   );
 }

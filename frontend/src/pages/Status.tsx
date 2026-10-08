@@ -24,6 +24,7 @@ const STEP_LABELS: Record<string, string> = {
   track: "Установки отслеживаемых игр",
   metrics: "Скоринг",
   keywords: "Ниши в поиске",
+  entry: "Место для новичков в поиске",
   cleanup: "Очистка старых данных",
   softlaunch: "Проверка софт-лончей (разово)",
 };

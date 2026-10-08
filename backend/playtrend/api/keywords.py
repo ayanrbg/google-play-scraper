@@ -1,5 +1,7 @@
 """Search-demand niches."""
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import asc, desc, func, select
 from sqlalchemy.orm import Session
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 from playtrend.api.deps import Ctx, feature, get_db
 from playtrend.catalog import GENRE_NAMES_RU
 from playtrend.models import App, GameMetrics, Keyword, KeywordRank
+from playtrend.pipeline import brand, entry
 from playtrend.pipeline.keyword_markets import MARKETS
 
 router = APIRouter(prefix="/api")
@@ -15,7 +18,8 @@ SORTS = {
     "opportunity": Keyword.opportunity, "demand": Keyword.demand, "competition": Keyword.competition,
     "young_share": Keyword.young_share, "young_best_installs": Keyword.young_best_installs,
     "top_median_installs": Keyword.top_median_installs, "term": Keyword.term, "first_seen": Keyword.first_seen,
-    "games_share": Keyword.games_share,
+    "games_share": Keyword.games_share, "entry_score": Keyword.entry_score, "room": Keyword.room,
+    "fresh_count": Keyword.fresh_count, "entrants_v7": Keyword.entrants_v7, "churn7": Keyword.churn7,
 }
 
 
@@ -27,6 +31,8 @@ def kw_payload(k: Keyword) -> dict:
         "young_share": k.young_share, "young_best_installs": k.young_best_installs,
         "brand_share": k.brand_share, "title_match_share": k.title_match_share, "games_share": k.games_share,
         "suggest_prefix_len": k.suggest_prefix_len, "analyzed_at": k.analyzed_at, "first_seen": k.first_seen,
+        "room": k.room, "room_best": k.room_best, "fresh_count": k.fresh_count, "entrants_growing": k.entrants_growing,
+        "entrants_v7": k.entrants_v7, "churn7": k.churn7, "entry_score": k.entry_score,
     }
 
 
@@ -36,6 +42,7 @@ def list_keywords(
     min_demand: float | None = None, max_competition: float | None = None,
     min_opportunity: float | None = None, min_young_share: float | None = None,
     max_brand_share: float | None = None, min_games_share: float | None = None, analyzed: bool = True,
+    min_room: int | None = None, min_fresh: int | None = None, min_entry: float | None = None,
     sort: str = "opportunity", dir: str = "desc", page: int = 1, page_size: int = Query(50, le=200),
     ctx: Ctx = Depends(feature("keywords")), db: Session = Depends(get_db),
 ):
@@ -56,6 +63,12 @@ def list_keywords(
         conds.append(Keyword.brand_share <= max_brand_share)
     if min_games_share is not None:
         conds.append(Keyword.games_share >= min_games_share)
+    if min_room is not None:
+        conds.append(Keyword.room >= min_room)
+    if min_fresh is not None:
+        conds.append(Keyword.fresh_count >= min_fresh)
+    if min_entry is not None:
+        conds.append(Keyword.entry_score >= min_entry)
     if analyzed:
         conds.append(Keyword.analyzed_at.is_not(None))
     col = SORTS.get(sort, Keyword.opportunity)
@@ -81,19 +94,25 @@ def keyword_detail(keyword_id: int, ctx: Ctx = Depends(feature("keywords")), db:
     if not k:
         raise HTTPException(404, "not_found")
     rows = db.execute(
-        select(KeywordRank.rank, App, GameMetrics.trend_score, GameMetrics.brand_flags)
+        select(KeywordRank.rank, App, GameMetrics)
         .join(App, App.app_id == KeywordRank.app_id)
         .outerjoin(GameMetrics, GameMetrics.app_id == App.app_id)
         .where(KeywordRank.keyword_id == keyword_id).order_by(KeywordRank.rank)
     ).all()
     related = db.scalars(select(Keyword).where(Keyword.seed == k.seed, Keyword.id != k.id, Keyword.country == k.country)
                          .order_by(Keyword.demand.desc()).limit(20)).all() if k.seed else []
+    apps = {a.app_id: a for _, a, _ in rows}
+    metrics = {a.app_id: m for _, a, m in rows if m}
+    branded = entry.branded_ids(db, apps, metrics, brand.Rules.load(db))
+    today = date.today()
     return {
         "keyword": kw_payload(k),
         "results": [{
             "rank": rank, "app_id": a.app_id, "title": a.title, "developer": a.developer, "icon_url": a.icon_url,
             "genre": GENRE_NAMES_RU.get(a.genre_id or "", a.genre_id), "released": a.released,
-            "installs": a.real_installs, "rating": a.score, "trend_score": ts, "brand_flags": flags or [],
-        } for rank, a, ts, flags in rows],
+            "installs": a.real_installs, "rating": a.score, "trend_score": m.trend_score if m else None,
+            "brand_flags": (m.brand_flags if m else None) or [], "v7": m.v7 if m else None,
+            "slot": entry.slot(a, m, a.app_id in branded, today) if rank <= entry.TOP_N else None,
+        } for rank, a, m in rows],
         "related": [kw_payload(r) for r in related],
     }
