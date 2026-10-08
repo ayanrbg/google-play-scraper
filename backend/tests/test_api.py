@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from playtrend.api.main import app
 from playtrend.auth import create_user
@@ -307,3 +308,28 @@ def test_guest_keys_limits(client, monkeypatch):
         for r in s.query(KeysReport).filter(KeysReport.requested_by.is_(None)):
             r.requested_at -= timedelta(days=2)
     assert anon.post("/api/games/g6/keys").status_code == 200
+
+
+def test_picks_are_private_to_the_team(client):
+    from playtrend import picks
+    from playtrend.models import Workspace
+    seed_radar()
+    assert client.get("/api/me").json()["picks"] == 0
+    item = {"app_id": "indie.hit", "niche": "sort", "why": "grows on search", "rivals": ["slow.game", "gone.game"],
+            "keys": [{"term": "sort puzzle", "country": "us", "demand": 70, "rank": 3, "young": 4}]}
+    with session_scope() as s:
+        ws = s.scalar(select(Workspace))
+        with pytest.raises(ValueError):
+            picks.load(s, ws.id, [{"app_id": "nope"}])
+        picks.load(s, ws.id, [item, {"app_id": "slow.game", "tier": "more"}])
+    r = client.get("/api/picks").json()
+    assert [g["app_id"] for g in r["items"]] == ["indie.hit", "slow.game"]
+    top = r["items"][0]
+    assert top["v7"] and top["pick"]["tier"] == "top" and top["pick"]["keys"][0]["term"] == "sort puzzle"
+    assert [x["app_id"] for x in top["pick"]["rivals"]] == ["slow.game"]
+    assert client.get("/api/me").json()["picks"] == 2
+    assert TestClient(app).get("/api/picks").status_code == 401
+
+    with session_scope() as s:   # a new list replaces the old one
+        assert picks.load(s, s.scalar(select(Workspace)).id, [item]) == {"loaded": 1, "removed": 1}
+    assert [g["app_id"] for g in client.get("/api/picks").json()["items"]] == ["indie.hit"]

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from playtrend.api import account, admin, games, keywords, ratelimit
+from playtrend.api import account, admin, games, keywords, picks, ratelimit
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -16,6 +16,7 @@ app.middleware("http")(ratelimit.middleware)
 app.include_router(account.router)
 app.include_router(games.router)
 app.include_router(keywords.router)
+app.include_router(picks.router)
 app.include_router(admin.router)
 
 

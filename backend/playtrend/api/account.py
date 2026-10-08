@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from playtrend.api.deps import Ctx, current, get_db, owner
 from playtrend.auth import COOKIE, create_user, issue_token, new_invite, normalize_email, verify_password
-from playtrend.models import Invite, SavedView, User, Workspace
+from playtrend.models import Invite, Pick, SavedView, User, Workspace
 from playtrend.plans import PLANS
 from playtrend.settings import get_settings
 
@@ -35,12 +35,14 @@ def _set_cookie(resp: Response, user: User):
                     samesite="lax", secure=cfg.cookie_secure, path="/")
 
 
-def me_payload(ctx: Ctx) -> dict:
+def me_payload(ctx: Ctx, db: Session) -> dict:
     return {
         "id": ctx.user.id, "email": ctx.user.email, "name": ctx.user.name, "role": ctx.user.role,
         "is_superadmin": ctx.user.is_superadmin,
         "workspace": {"id": ctx.workspace.id, "name": ctx.workspace.name, "plan": ctx.workspace.plan},
         "plan": ctx.plan,
+        # the "to build" section shows up only for a team that has picks
+        "picks": db.scalar(select(func.count()).select_from(Pick).where(Pick.workspace_id == ctx.workspace.id)),
     }
 
 
@@ -100,8 +102,8 @@ def register(body: RegisterIn, response: Response, db: Session = Depends(get_db)
 
 
 @router.get("/me")
-def me(ctx: Ctx = Depends(current)):
-    return me_payload(ctx)
+def me(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    return me_payload(ctx, db)
 
 
 class PasswordIn(BaseModel):

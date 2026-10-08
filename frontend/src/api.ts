@@ -39,6 +39,7 @@ export type Me = {
   is_superadmin: boolean;
   workspace: { id: number; name: string; plan: string };
   plan: { label: string; keywords: boolean; export: boolean; max_rows: number | null; seats: number };
+  picks: number;   // games in the team's "to build" list; the section is shown only when there are some
 };
 
 export type Game = {

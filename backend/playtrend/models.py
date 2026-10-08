@@ -341,6 +341,26 @@ class Mark(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Pick(Base):
+    """A game picked by hand as worth building on: growing organically, with search queries a newcomer
+    can still get into. Private to a workspace; loaded with `cli picks-load`."""
+    __tablename__ = "picks"
+
+    workspace_id: Mapped[int] = mapped_column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    app_id: Mapped[str] = mapped_column(String(255), ForeignKey("apps.app_id", ondelete="CASCADE"), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    tier: Mapped[str] = mapped_column(String(16), default="top")   # top | more
+    niche: Mapped[str | None] = mapped_column(String(255))
+    why: Mapped[str | None] = mapped_column(Text)        # why it is worth making
+    entry: Mapped[str | None] = mapped_column(Text)      # how to get into search
+    risks: Mapped[str | None] = mapped_column(Text)
+    # [{term, country, demand, rank, young, proof}]: queries where young games of other studios made the top 10
+    keys: Mapped[list] = mapped_column(JSON, default=list)
+    rivals: Mapped[list] = mapped_column(JSON, default=list)   # app_ids of those young games
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class SavedView(Base):
     __tablename__ = "saved_views"
 

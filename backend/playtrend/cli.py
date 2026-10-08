@@ -6,6 +6,7 @@
   keys <app_id>           build the keys report (reverse ASO) of one game now
   worker                  long-running scheduler (runs `daily` once a day at PLAYTREND_DAILY_HOUR_UTC)
   create-user <email> <password> [--superadmin]
+  picks-load <file.json> [--workspace Main]   replace a team's "to build" list (see playtrend/picks.py)
   import-legacy <path>    import history from the old SQLite monitor.db
 """
 
@@ -198,6 +199,9 @@ def main(argv=None):
     u.add_argument("--workspace", default="Main")
     k = sub.add_parser("keys")
     k.add_argument("app_id")
+    pl = sub.add_parser("picks-load")
+    pl.add_argument("path")
+    pl.add_argument("--workspace", default="Main")
     imp = sub.add_parser("import-legacy")
     imp.add_argument("path")
     args = p.parse_args(argv)
@@ -236,6 +240,14 @@ def main(argv=None):
                         workspace_name=args.workspace, role="owner" if not ws else "member",
                         superadmin=args.superadmin)
         print("ok")
+    elif args.cmd == "picks-load":
+        from playtrend import picks
+        from playtrend.models import Workspace
+        with session_scope() as s:
+            ws = s.scalar(select(Workspace).where(Workspace.name == args.workspace))
+            if not ws:
+                sys.exit(f"no workspace {args.workspace}")
+            print(picks.load_file(s, ws.id, args.path))
     elif args.cmd == "import-legacy":
         from playtrend.legacy_import import import_legacy
         print(import_legacy(args.path))

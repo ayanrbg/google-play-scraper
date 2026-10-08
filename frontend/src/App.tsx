@@ -13,6 +13,7 @@ import Genres from "./pages/Genres";
 import Studios from "./pages/Studios";
 import Status from "./pages/Status";
 import Settings from "./pages/Settings";
+import Picks from "./pages/Picks";
 
 // The site is public: `null` is a guest who can read everything. Signing in adds team features
 // (marks, saved views, settings) and admin tools.
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/niches/:id" element={<NichePage />} />
           <Route path="/genres" element={<Genres />} />
           <Route path="/studios" element={<Studios />} />
+          <Route path="/picks" element={user ? <Picks /> : <Navigate to="/login?next=/picks" replace />} />
           <Route path="/status" element={<Status />} />
           <Route path="/settings" element={user ? <Settings /> : <Navigate to="/login?next=/settings" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -116,6 +118,11 @@ function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="nav">
           <div className="nav-section">Поиск идей</div>
+          {me && me.picks > 0 && (
+            <NavLink to="/picks">
+              <span className="nav-dot" /> Под реализацию
+            </NavLink>
+          )}
           <NavLink to="/" end>
             <span className="nav-dot" /> Радар игр
           </NavLink>
@@ -183,7 +190,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <TabIcon d={<><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>} />
           Студии
         </NavLink>
-        <button className={open || ["/status", "/settings"].includes(location.pathname) ? "active" : ""} onClick={() => setOpen(!open)}>
+        <button className={open || ["/status", "/settings", "/picks"].includes(location.pathname) ? "active" : ""} onClick={() => setOpen(!open)}>
           <TabIcon d={<path d="M4 7h16M4 12h16M4 17h16" />} />
           Ещё
         </button>
