@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     keyword_seeds_per_run: int = 15
     keyword_local_refresh_per_run: int = 150   # each additional language market
     keyword_local_seeds_per_run: int = 8
+    # Queries with room for a newcomer are searched again weekly: who entered and left the top
+    keyword_watch_per_run: int = 60
+    keyword_local_watch_per_run: int = 30
     similar_expand_top: int = 100
 
     # Scheduler (UTC hour of the daily pipeline)

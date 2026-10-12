@@ -50,6 +50,16 @@ def _fetch(app_id: str, check_soft_launch: bool = False):
     return d
 
 
+def fit_columns(row: dict) -> dict:
+    """Cut strings to their column's length: one card with an overlong field must not fail its whole batch."""
+    cols = App.__table__.columns
+    for k, v in row.items():
+        n = getattr(cols[k].type, "length", None) if k in cols else None
+        if n and isinstance(v, str) and len(v) > n:
+            row[k] = v[:n]
+    return row
+
+
 def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
     """Fetch cards for app_ids, update apps, write today's snapshot for tracked games."""
     today = date.today()
@@ -98,7 +108,7 @@ def refresh(app_ids: list[str], label: str, set_tracked: bool) -> dict:
             batch_snaps.append({"app_id": app_id, "date": today, "real_installs": d["real_installs"],
                                 "ratings": d.get("ratings"), "reviews": d.get("reviews"), "score": d.get("score"),
                                 "version": d.get("version")})
-        batch_apps.append(row)
+        batch_apps.append(fit_columns(row))
         ok += 1
         if len(batch_apps) >= 200:
             flush()

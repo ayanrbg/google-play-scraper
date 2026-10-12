@@ -335,3 +335,8 @@ def test_room_for_a_new_game_in_search(client):
     assert slots["king"]["kind"] == "brand" and slots["stub.only"]["kind"] == "unknown"
     assert slots["old.dead"]["reasons"] == ["abandoned"] and not slots["big.hit"]["takeable"]
     assert client.get("/api/keywords", params={"min_room": 4, "country": "us"}).json()["total"] == 1
+
+
+def test_overlong_card_fields_do_not_fail_the_batch():
+    row = details.fit_columns({"developer_id": "x" * 400, "title": "ok", "app_id_key": "a" * 300, "free": True})
+    assert len(row["developer_id"]) == 255 and row["title"] == "ok" and len(row["app_id_key"]) == 300

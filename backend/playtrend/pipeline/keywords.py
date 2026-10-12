@@ -9,7 +9,7 @@ for us - whether young games manage to rank there (proof a newcomer can get traf
 import math
 import re
 import string
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from statistics import median
 
 from sqlalchemy import delete, select
@@ -28,6 +28,8 @@ STOPWORDS = {"the", "and", "for", "with", "game", "games", "free", "new", "best"
              "pro", "hd", "lite", "fun", "adventure", "simulator", "idle", "tycoon", "3d", "2d"}
 YOUNG_DAYS = 365
 TOP_N = 10
+WATCH_MIN_DEMAND = 40       # promising queries re-searched weekly (see keyword_watch_per_run)
+WATCH_MIN_ENTRY = 50
 
 
 # ----------------------------- demand -----------------------------
@@ -233,6 +235,14 @@ def run_market(mk: Market, stats: dict):
                         .where(Keyword.lang == lang, Keyword.country == country, Keyword.demand >= 10)
                         .order_by(Keyword.analyzed_at.is_not(None), Keyword.analyzed_at, Keyword.demand.desc())
                         .limit(refresh_budget)).all()
+        # Plus the promising ones searched a week ago or earlier, best first: their top-10 history
+        watch_budget = cfg.keyword_watch_per_run if mk.primary else cfg.keyword_local_watch_per_run
+        week_ago = datetime.utcnow() - timedelta(days=entry.CHURN_DAYS)
+        taken = {k.id for k in kws}
+        kws += [k for k in s.execute(select(Keyword.id, Keyword.term, Keyword.demand).where(
+            Keyword.lang == lang, Keyword.country == country, Keyword.demand >= WATCH_MIN_DEMAND,
+            Keyword.entry_score >= WATCH_MIN_ENTRY, Keyword.analyzed_at < week_ago)
+            .order_by((Keyword.demand * Keyword.entry_score).desc()).limit(watch_budget)).all() if k.id not in taken]
     results: dict[int, list[dict]] = {}
     for kw, res, err in parallel(lambda k: client.search(k.term, lang, country, 20), kws, label="search"):
         if not err:
