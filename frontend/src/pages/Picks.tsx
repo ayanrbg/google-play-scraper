@@ -7,7 +7,7 @@ import { MarkButtons } from "./Radar";
 import { roomText } from "./Niches";
 
 type PickKey = {
-  term: string; country: string; demand: number; rank: number; young: number; proof?: number;
+  term: string; country: string; demand: number; rank: number | null; young: number; proof?: number;
   keyword_id: number | null; room: number | null; room_best: number | null; fresh: number | null; entry_score: number | null;
 };
 type Rival = { app_id: string; title: string | null; icon_url: string | null; installs: number | null; v7: number | null; age_days: number | null };
@@ -42,9 +42,9 @@ export default function Picks() {
         <div>
           <h1 className="page-title">Под реализацию</h1>
           <PageSub>
-            Игры, отобранные вручную по данным базы. <b>Растут органически</b>: нет признаков закупки трафика, издателя
-            или бренда. <b>В поиске есть куда зайти</b>: по их запросам со спросом в топ-10 уже пробились молодые игры
-            других студий, и не одна, значит Google пускает новичков. Запросы взяты из разных языковых рынков:
+            Игры, отобранные вручную по данным базы, — каждая как пример ниши. <b>Растут органически</b>: нет признаков
+            закупки трафика, издателя или бренда. <b>В поиске есть куда зайти</b>: по запросам ниши в топ-10 уже пробились
+            молодые игры других студий, и в топе есть места, которые может занять новичок (колонка «Место для нас»). Запросы взяты из разных языковых рынков:
             с локализацией можно заходить сразу в несколько. Цифры живые, обновляются каждый день. Текст разбора
             и ключи — на дату подборки{q.data?.updated_at ? ` (${fmtDateTime(q.data.updated_at)})` : ""}.
           </PageSub>
@@ -163,7 +163,7 @@ function KeysTable({ keys }: { keys: PickKey[] }) {
             <th>Запрос</th>
             <th>Рынок</th>
             <th className="r" title="Спрос по автодополнению Google Play, 0–100">Спрос</th>
-            <th className="r" title="Место этой игры в выдаче">Игра</th>
+            <th className="r" title="Место этой игры в выдаче (— если её нет в топ-30: запрос ниши, а не её собственный)">Игра</th>
             <th className="r" title="Молодых игр (до года) других студий в топ-10 выдачи">Новичков в топ-10</th>
             <th className="r" title="Мест в топ-10, которые может занять новая игра, и самое высокое из них (на сегодня)">Место для нас</th>
           </tr>
@@ -174,7 +174,7 @@ function KeysTable({ keys }: { keys: PickKey[] }) {
               <td>{k.keyword_id ? <Link className="link" to={`/niches/${k.keyword_id}`}>{k.term}</Link> : k.term}</td>
               <td className="muted" title={COUNTRY_NAMES[k.country] || k.country}>{k.country.toUpperCase()}</td>
               <td className="r num">{Math.round(k.demand)}</td>
-              <td className="r num">#{k.rank}</td>
+              <td className="r num">{k.rank ? `#${k.rank}` : "—"}</td>
               <td className="r num">{k.young}</td>
               <td className={`r num ${(k.room ?? 0) >= 3 ? "good" : k.room === 0 ? "bad" : ""}`}>{roomText(k)}</td>
             </tr>
