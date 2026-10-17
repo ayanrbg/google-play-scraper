@@ -57,6 +57,8 @@ export type Game = {
   soft_launch_markets: string[];
   revival: boolean;
   hidden_gem: boolean;
+  traffic: "organic" | "mixed" | "paid" | "external" | "unclear" | null;   // where the installs come from (estimate)
+  paid_level: number | null;
   chart_countries_any: number;
   installs: number | null;
   v7: number | null;

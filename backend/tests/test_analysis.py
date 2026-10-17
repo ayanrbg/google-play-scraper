@@ -340,3 +340,40 @@ def test_room_for_a_new_game_in_search(client):
 def test_overlong_card_fields_do_not_fail_the_batch():
     row = details.fit_columns({"developer_id": "x" * 400, "title": "ok", "app_id_key": "a" * 300, "free": True})
     assert len(row["developer_id"]) == 255 and row["title"] == "ok" and len(row["app_id_key"]) == 300
+
+
+def test_fast_growth_is_judged_against_games_as_fast():
+    """Ratings lag installs: a game gaining 20K a day has fewer per 1000 than the genre's settled
+    games, and that alone is not a sign of bought traffic."""
+    rows = [("GAME_CASUAL", 300, 900, 6_000, 1_000_000)] * 30 + [("GAME_CASUAL", 20_000, 60, 1_000, 1_000_000)] * 30
+    norms = analysis.RatingNorms(rows)
+    assert norms.genre_median("GAME_CASUAL") == 3.5
+    assert norms.peer_median("GAME_CASUAL", 25_000) == 1.0
+    x = analysis.Inputs(v7=25_000, installs=900_000, ratings_per_k=0.9,
+                        genre_ratings_per_k=norms.genre_median("GAME_CASUAL"),
+                        peer_ratings_per_k=norms.peer_median("GAME_CASUAL", 25_000))
+    assert analysis.paid_driver(x)["level"] == 0
+    x.peer_ratings_per_k = None            # judged against the whole genre it would look bought
+    assert analysis.paid_driver(x)["level"] == 1
+    # a small genre borrows the speed effect seen across all genres
+    rare = analysis.RatingNorms(rows + [("GAME_MUSIC", 300, 900, 7_000, 1_000_000)] * 20)
+    assert rare.peer_median("GAME_MUSIC", 25_000) == round(7.0 * 1.0 / 6.0, 2)   # all genres: 6 -> 1
+
+
+def test_studio_audience_alone_is_not_paid():
+    x = analysis.Inputs(v7=5000, installs=300_000, studio_games=4, studio_installs=12_000_000,
+                        studio_ratings_per_k=4.0, genre_ratings_per_k=4.5)
+    paid = analysis.paid_driver(x)
+    assert paid["level"] == 0 and "ещё 4 игры" in paid["evidence"][0]
+    x.studio_ratings_per_k = 1.0
+    assert analysis.paid_driver(x)["level"] == 1
+
+
+def test_traffic_kinds():
+    assert analysis.traffic({"paid": 2, "search": 3}) == "mixed"
+    assert analysis.traffic({"paid": 3, "charts": 1, "external": 3}) == "paid"
+    assert analysis.traffic({"paid": 1, "charts": 2}) == "organic"
+    assert analysis.traffic({"external": 2}) == "external"
+    assert analysis.traffic({}) == "unclear"
+    r = analysis.growth_drivers(analysis.Inputs(v7=8000, installs=300_000, flags=["hc_publisher"]))
+    assert r["traffic"]["key"] == "paid" and r["traffic"]["label"] == "закупка"

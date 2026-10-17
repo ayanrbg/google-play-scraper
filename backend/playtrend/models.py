@@ -184,6 +184,9 @@ class GameMetrics(Base):
     revival: Mapped[bool] = mapped_column(Boolean, default=False)
     # Young, not a brand, growing - yet barely visible in charts: what manual browsing misses
     hidden_gem: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # Where the installs come from (analysis.traffic): organic | mixed | paid | external | unclear
+    traffic: Mapped[str | None] = mapped_column(String(16), index=True)
+    paid_level: Mapped[int | None] = mapped_column(Integer)
     chart_countries_any: Mapped[int] = mapped_column(Integer, default=0)
     dev_max_installs: Mapped[int | None] = mapped_column(BigInteger)
     dev_app_count: Mapped[int | None] = mapped_column(Integer)

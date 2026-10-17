@@ -10,7 +10,7 @@ import { fmtAccel, fmtAge, fmtN, fmtRating } from "../format";
 export const GAME_DEFAULTS: Record<string, string> = {
   q: "", genres: "", max_age: "180", min_v7: "", min_accel: "", min_trend: "", min_installs: "", max_installs: "",
   min_rating: "", min_countries: "", min_search: "", hide_flags: "major,hc_publisher,franchise,cash", max_dev_installs: "",
-  ads: "", iap: "", prereg: "include", soft_launch: "include", revival: "include", hidden: "", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
+  ads: "", iap: "", prereg: "include", soft_launch: "include", revival: "include", hidden: "", traffic: "", charts: "", marks: "hide_rejected", sort: "trend_score", dir: "desc", page: "1",
 };
 
 const GENRES: [string, string][] = [
@@ -24,6 +24,7 @@ const GENRES: [string, string][] = [
 // One-click views for the questions we actually ask
 const PRESETS: { name: string; hint: string; params: Record<string, string> }[] = [
   { name: "◆ Скрытые находки", hint: "растут, но почти не видны в чартах", params: { hidden: "true", max_age: "90", sort: "v7" } },
+  { name: "Быстрые без закупки", hint: "1K+/день: органика, соцсети и смешанные", params: { traffic: "no_paid", min_v7: "1000", max_age: "180", sort: "v7" } },
   { name: "Софт-лонч → мир", hint: "прошли тест и вышли глобально", params: { soft_launch: "only", max_age: "60" } },
   { name: "↻ Возрождения", hint: "старые игры снова в росте", params: { revival: "only", max_age: "", sort: "trend_score" } },
   { name: "Свежие в Top New", hint: "до 30 дней, в чартах новинок", params: { charts: "top_new", max_age: "30" } },
@@ -169,6 +170,13 @@ export default function Radar() {
               />
             </div>
           </FGroup>
+          <FGroup title="Источник трафика" hint="оценка: поиск, чарты, признаки закупки">
+            <Chips
+              options={[["no_paid", "Без закупки"], ["organic", "Органика"], ["mixed", "Смешанный"], ["external", "Извне стора"], ["paid", "Закупка"]]}
+              value={f.get("traffic")}
+              onChange={(v) => f.set({ traffic: v })}
+            />
+          </FGroup>
           <FGroup title="Органика из поиска" hint="видимость по ключам">
             <Chips
               options={[["10", "10+"], ["30", "30+"], ["60", "60+"]]}
@@ -313,7 +321,7 @@ export default function Radar() {
                             <div className="app-dev">
                               {g.developer}
                               {" "}
-                              <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch || g.revival ? null : g.age_days} softLaunch={g.soft_launch_markets} revival={g.revival} hidden={g.hidden_gem} />
+                              <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch || g.revival ? null : g.age_days} softLaunch={g.soft_launch_markets} revival={g.revival} hidden={g.hidden_gem} traffic={g.traffic} />
                             </div>
                           </div>
                         </div>
@@ -385,7 +393,7 @@ function GameCard({ g, onOpen, onMark }: { g: Game; onOpen: () => void; onMark?:
         <Score value={g.trend_score} />
       </div>
       <div className="card-flags">
-        <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch || g.revival ? null : g.age_days} softLaunch={g.soft_launch_markets} revival={g.revival} hidden={g.hidden_gem} />
+        <Flags flags={g.brand_flags} prereg={g.pre_register} age={g.soft_launch || g.revival ? null : g.age_days} softLaunch={g.soft_launch_markets} revival={g.revival} hidden={g.hidden_gem} traffic={g.traffic} />
       </div>
       <div className="card-stats">
         <CardStat label="В день">

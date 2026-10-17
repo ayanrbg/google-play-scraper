@@ -58,6 +58,7 @@ class GameFilters:
         soft_launch: str = "include",                              # include | only | exclude
         revival: str = "include",                                  # include | only | exclude
         hidden: bool = False,                                      # only hidden gems
+        traffic: str | None = None,                                # no_paid | organic | mixed | paid | external
         charts: str | None = None,                                 # top_new | trending | any
         marks: str = "hide_rejected",                              # all | hide_rejected | interesting | in_work | rejected | unmarked
         sort: str = "trend_score", dir: str = "desc",
@@ -125,6 +126,10 @@ def build_query(f: GameFilters, ctx: Ctx):
         conds.append(GameMetrics.revival.is_(False))
     if f.hidden:
         conds.append(GameMetrics.hidden_gem.is_(True))
+    if f.traffic == "no_paid":
+        conds.append(or_(GameMetrics.traffic.is_(None), GameMetrics.traffic != "paid"))
+    elif f.traffic in analysis.TRAFFIC:
+        conds.append(GameMetrics.traffic == f.traffic)
     if f.charts == "top_new":
         conds.append(GameMetrics.new_countries > 0)
     elif f.charts == "trending":
@@ -152,6 +157,7 @@ def row_payload(app: App, m: GameMetrics, mark_status, mark_note) -> dict:
         "released": app.released, "age_days": m.age_days, "pre_register": app.pre_register,
         "soft_launch": bool(app.soft_launch), "soft_launch_markets": app.soft_launch_markets or [],
         "revival": m.revival, "hidden_gem": m.hidden_gem, "chart_countries_any": m.chart_countries_any,
+        "traffic": m.traffic, "paid_level": m.paid_level,
         "installs": m.installs, "v7": m.v7, "v7_prev": m.v7_prev, "accel": m.accel, "v_life": m.v_life,
         "rating": app.score, "ratings": app.ratings,
         "new_countries": m.new_countries, "top_countries": m.top_countries,
@@ -247,7 +253,7 @@ def game_detail(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(g
                      .where(KeywordRank.app_id == app_id).order_by(Keyword.demand.desc()).limit(50)).all()
     keywords = [{"id": k.id, "term": k.term, "country": k.country, "lang": k.lang, "demand": k.demand,
                  "opportunity": k.opportunity, "competition": k.competition, "rank": rank} for k, rank in kws]
-    genre_rate = _cached(("genre_rate", app.genre_id), lambda: analysis.genre_ratings_per_k(db, app.genre_id))
+    norms = _cached(("rating_norms",), lambda: analysis.rating_norms(db))
 
     return {
         "app": {
@@ -270,7 +276,7 @@ def game_detail(app_id: str, ctx: Ctx = Depends(viewer), db: Session = Depends(g
         "score_history": [{"date": s.date, "trend_score": s.trend_score, "v7": s.v7} for s in scores],
         "developer": dev, "developer_apps": dev_apps,
         "keywords": keywords,
-        "analysis": analysis.analyze(db, app, m, snaps, chart_rows, keywords, genre_rate),
+        "analysis": analysis.analyze(db, app, m, snaps, chart_rows, keywords, norms),
         "mark": {"status": mark.status, "note": mark.note, "updated_at": mark.updated_at} if mark else None,
         "flag_labels": FLAG_LABELS,
     }

@@ -279,6 +279,11 @@ table.data tbody tr { animation: rowIn .35s both; }
 .preset b { font-family: var(--font-display); font-size: 12.5px; font-weight: 600; }
 .preset span { font-size: 11.5px; color: var(--muted); }
 .flag.new { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.flag.traffic-organic, .traffic-verdict.traffic-organic b { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.flag.traffic-mixed, .traffic-verdict.traffic-mixed b { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); border-style: dashed; }
+.flag.traffic-external, .traffic-verdict.traffic-external b { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+.flag.traffic-paid, .traffic-verdict.traffic-paid b { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.traffic-verdict { margin: -6px 0 12px; font-size: 13px; color: var(--muted); }
 
 .pill { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--bg-3); font-size: 11.5px; color: var(--muted); }
 .delta-up { color: var(--good); }

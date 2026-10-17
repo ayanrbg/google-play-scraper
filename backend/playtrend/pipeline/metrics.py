@@ -118,6 +118,7 @@ def rank_weight(rank: int) -> float:
 # ----------------------------- job -----------------------------
 
 def run(today: date | None = None):
+    from playtrend import analysis    # it imports the series math from here
     today = today or date.today()
     since = today - timedelta(days=HISTORY_DAYS)
     with job_run("metrics") as stats, session_scope() as s:
@@ -135,9 +136,12 @@ def run(today: date | None = None):
         best_rank: dict[str, int] = {}
         best_any: dict[str, int] = {}                     # best position in any chart
         chart_ccs: dict[str, set] = defaultdict(set)      # countries across all charts
+        chart_rows: dict[str, dict[str, dict]] = defaultdict(dict)   # for the traffic estimate
         if chart_date:
             for r in s.execute(select(ChartDaily).where(ChartDaily.date == chart_date)).scalars():
                 charts_now[r.app_id][r.collection] = r.n_countries
+                chart_rows[r.app_id][r.collection] = {"n": r.n_countries, "best_rank": r.best_rank,
+                                                      "best_country": r.best_country, "countries": r.countries or {}}
                 chart_ccs[r.app_id].update((r.countries or {}).keys())
                 if r.best_rank:
                     best_any[r.app_id] = min(best_any.get(r.app_id, 10**6), r.best_rank)
@@ -152,23 +156,31 @@ def run(today: date | None = None):
         # Search visibility from keyword ranks
         visibility: dict[str, float] = defaultdict(float)
         kw_count: dict[str, int] = defaultdict(int)
-        for r in s.execute(select(KeywordRank.app_id, KeywordRank.rank, Keyword.demand)
+        kw_hits: dict[str, list[dict]] = defaultdict(list)
+        for r in s.execute(select(KeywordRank.app_id, KeywordRank.rank, Keyword.id, Keyword.term, Keyword.country,
+                                  Keyword.demand)
                            .join(Keyword, Keyword.id == KeywordRank.keyword_id)):
             visibility[r.app_id] += (r.demand or 0) * rank_weight(r.rank)
             if r.rank <= 10 and (r.demand or 0) >= 20:
                 kw_count[r.app_id] += 1
+            if r.rank <= 10:
+                kw_hits[r.app_id].append({"id": r.id, "term": r.term, "country": r.country,
+                                          "demand": r.demand, "rank": r.rank})
 
         # Developer portfolio: best installs among the developer's *other* known apps
         dev_ids = {a.developer_id for a in apps if a.developer_id}
         devs = {d.developer_id: d for d in s.execute(select(Developer).where(Developer.developer_id.in_(dev_ids))).scalars()} if dev_ids else {}
         dev_top: dict[str, list[tuple[int, str]]] = defaultdict(list)
+        dev_games: dict[str, list[tuple[str, int, int]]] = defaultdict(list)   # released games, with ratings
         if dev_ids:
-            for r in s.execute(select(App.developer_id, App.app_id, App.real_installs)
+            for r in s.execute(select(App.developer_id, App.app_id, App.real_installs, App.ratings, App.pre_register)
                                .where(App.developer_id.in_(dev_ids), App.real_installs.is_not(None))):
                 dev_top[r.developer_id].append((r.real_installs, r.app_id))
+                if r.real_installs > 0 and not r.pre_register:
+                    dev_games[r.developer_id].append((r.app_id, r.real_installs, r.ratings or 0))
         rules = brand.Rules.load(s)
 
-        metrics_rows, history_rows = [], []
+        metrics_rows, history_rows, traffic_inputs = [], [], []
         for a in apps:
             pts = change_points([(r.date, r.real_installs) for r in snaps.get(a.app_id, [])])
             rpts = change_points([(r.date, r.ratings) for r in snaps.get(a.app_id, [])])
@@ -202,6 +214,18 @@ def run(today: date | None = None):
             n_chart_cc = len(chart_ccs.get(a.app_id, ()))
             gem = is_hidden_gem(age, v_eff, installs, flags, n_chart_cc, best_any.get(a.app_id), revival)
 
+            studio = [g for g in dev_games.get(a.developer_id, []) if g[0] != a.app_id]
+            studio_installs, studio_ratings = sum(g[1] for g in studio), sum(g[2] for g in studio)
+            traffic_inputs.append((a, analysis.Inputs(
+                v7=v_eff, installs=installs, age=age, search_visibility=round(100 * (1 - math.exp(-vis / 150)), 1),
+                keyword_hits=kw_hits.get(a.app_id, []), charts_now=chart_rows.get(a.app_id, {}),
+                breadth_delta7=(new_c + top_c) - charts_before.get(a.app_id, 0), flags=flags,
+                soft_launch=bool(a.soft_launch),
+                ratings_per_k=round(a.ratings * 1000 / installs, 2)
+                if a.ratings is not None and installs and not a.pre_register else None,
+                studio_games=len(studio), studio_installs=studio_installs,
+                studio_ratings_per_k=round(studio_ratings * 1000 / studio_installs, 2) if studio_installs else None)))
+
             metrics_rows.append({
                 "app_id": a.app_id, "computed_at": datetime.utcnow(), "age_days": age, "installs": installs,
                 "revival": revival, "hidden_gem": gem, "chart_countries_any": n_chart_cc,
@@ -218,6 +242,16 @@ def run(today: date | None = None):
                 "data_days": len(snaps.get(a.app_id, [])),
             })
             history_rows.append({"app_id": a.app_id, "date": today, "trend_score": total, "v7": v_eff})
+
+        # Where the installs come from: the ratings norms need every game's speed first
+        norms = analysis.RatingNorms([(a.genre_id, r["v7"], r["age_days"], a.ratings, r["installs"])
+                                      for (a, _), r in zip(traffic_inputs, metrics_rows) if not a.pre_register])
+        for (a, x), r in zip(traffic_inputs, metrics_rows):
+            x.genre_ratings_per_k = norms.genre_median(a.genre_id)
+            x.peer_ratings_per_k = norms.peer_median(a.genre_id, x.v7)
+            out = analysis.growth_drivers(x)
+            r["traffic"] = out["traffic"]["key"] if x.v7 is not None or x.installs else None
+            r["paid_level"] = next(d["level"] for d in out["drivers"] if d["key"] == "paid")
 
         upsert(s, GameMetrics, metrics_rows, key=["app_id"])
         upsert(s, ScoreHistory, history_rows, key=["app_id", "date"])

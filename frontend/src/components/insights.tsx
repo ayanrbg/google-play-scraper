@@ -36,6 +36,7 @@ export type TimelineItem = {
 export type Analysis = {
   verdict: string;
   drivers: Driver[];
+  traffic?: { key: string; label: string; note: string };
   facts: string[];
   timeline: TimelineItem[];
   spikes: { start: string; end: string; rate: number; ratio: number; cause: string }[];
@@ -105,6 +106,11 @@ export function GrowthDrivers({ analysis }: { analysis: Analysis }) {
           <p>Откуда приходят установки. Нажмите на строку, чтобы увидеть детали.</p>
         </div>
       </div>
+      {analysis.traffic && analysis.traffic.key !== "unclear" && (
+        <p className={`traffic-verdict traffic-${analysis.traffic.key}`}>
+          <b>Трафик: {analysis.traffic.label}.</b> {analysis.traffic.note}
+        </p>
+      )}
       <div className="drivers">
         {shown.map((d) => {
           const isOpen = open === d.key;

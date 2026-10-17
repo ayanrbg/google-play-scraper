@@ -8,6 +8,7 @@ signals typical of paid user acquisition, and similar young games growing at the
 Reads the database only - the web API must never talk to Google.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from statistics import median
@@ -26,11 +27,22 @@ TOP_PLACES = 20           # chart places that bring installs by themselves
 WAVE_MAX_AGE = 180
 WAVE_MIN_TREND = 40
 MIN_GENRE_SAMPLE = 20
+PEER_MAX_AGE = 365         # a game's ratings are compared with young games growing about as fast
 
 LEVELS = {3: "сильный", 2: "заметный", 1: "слабый", 0: "не видно"}
 DRIVER_NAMES = {
     "search": "поиск в Google Play", "charts": "чарты", "external": "трафик извне стора",
     "paid": "закупка трафика", "wave": "волна похожих игр", "updates": "обновления",
+}
+# Where the installs come from, in one word: what the radar filters on
+TRAFFIC = {
+    "organic": ("органика", "Установки объясняются поиском и чартами, признаков закупки нет"),
+    "mixed": ("смешанный", "Есть признаки закупки, но игра заметна и в поиске или чартах: "
+                           "проверьте, есть ли место по её ключам"),
+    "paid": ("закупка", "Признаки закупки трафика, а в поиске и чартах игра почти не видна"),
+    "external": ("извне стора", "Растёт быстро не из поиска и чартов, а признаков закупки нет: "
+                                "скорее соцсети (TikTok, YouTube) или подборки Google"),
+    "unclear": ("неясно", "Явного источника установок не видно"),
 }
 
 
@@ -133,6 +145,7 @@ class Inputs:
     soft_launch: bool = False
     ratings_per_k: float | None = None
     genre_ratings_per_k: float | None = None
+    peer_ratings_per_k: float | None = None   # young games of the genre growing about as fast
     spikes: list[dict] = field(default_factory=list)
     effects: list[dict] = field(default_factory=list)
     versions_seen: int = 0
@@ -226,9 +239,11 @@ def paid_driver(x: Inputs) -> dict:
         points += 1
         ev.append("У студии уже есть хит 50M+: есть бюджет и опыт закупки")
     if x.studio_installs >= STUDIO_AUDIENCE:
-        points += 1
+        # A studio audience is its own traffic (cross-promo), not bought: it counts only when the
+        # studio's games also lack ratings - the "buy installs cheap, earn on ads" model.
         low = (x.studio_ratings_per_k is not None and x.genre_ratings_per_k
                and x.studio_ratings_per_k < 0.5 * x.genre_ratings_per_k)
+        points += 1 if low else 0
         ev.append(f"У студии ещё {x.studio_games} {plural(x.studio_games, 'игра', 'игры', 'игр')} на {fmt_n(x.studio_installs)} "
                   "установок: своя аудитория, которую можно перегонять рекламой из игры в игру"
                   + (f"; и у них тоже мало оценок ({fmt_f(x.studio_ratings_per_k)} на 1000) — модель «купить трафик "
@@ -236,13 +251,34 @@ def paid_driver(x: Inputs) -> dict:
     if x.soft_launch:
         points += 1
         ev.append("Прошла софт-лонч: так проверяют метрики перед масштабированием закупки")
-    if (x.ratings_per_k is not None and x.genre_ratings_per_k and (x.installs or 0) >= 50_000
-            and x.ratings_per_k < 0.5 * x.genre_ratings_per_k):
-        times = x.genre_ratings_per_k / max(x.ratings_per_k, 0.01)
+    # Ratings lag installs, so a game gaining 30K a day always has fewer per 1000 than the genre's
+    # settled games: compare with young games of the genre growing about as fast.
+    norm = x.peer_ratings_per_k or x.genre_ratings_per_k
+    if (x.ratings_per_k is not None and norm and (x.installs or 0) >= 50_000
+            and x.ratings_per_k < 0.5 * norm):
+        times = norm / max(x.ratings_per_k, 0.01)
         points += 2 if times >= 5 else 1
-        ev.append(f"Оценок на 1000 установок {fmt_f(x.ratings_per_k)} при медиане жанра {fmt_f(x.genre_ratings_per_k)}"
+        whom = (f"{fmt_f(norm)} у молодых игр жанра с той же скоростью роста" if x.peer_ratings_per_k
+                else f"жанра {fmt_f(norm)}")
+        ev.append(f"Оценок на 1000 установок {fmt_f(x.ratings_per_k)} при медиане {whom}"
                   f" (в {round(times)} раз меньше): много случайных игроков, типично для рекламного трафика")
     return driver("paid", min(3, points), ev)
+
+
+def traffic(levels: dict[str, int]) -> str:
+    """Paid signs next to real search or chart presence make a mixed case, not a paid one:
+    the niche can still have organic room for a new game."""
+    organic = max(levels.get("search", 0), levels.get("charts", 0))
+    if levels.get("paid", 0) >= 2:
+        return "mixed" if organic >= 2 else "paid"
+    if organic >= 2:
+        return "organic"
+    return "external" if levels.get("external", 0) >= 2 else "unclear"
+
+
+def traffic_payload(key: str) -> dict:
+    label, note = TRAFFIC[key]
+    return {"key": key, "label": label, "note": note}
 
 
 def updates_driver(x: Inputs) -> dict:
@@ -275,6 +311,7 @@ def growth_drivers(x: Inputs) -> dict:
     drivers = [search, charts, external_driver(x, search["level"], charts["level"]), paid_driver(x),
                updates_driver(x), wave_driver(x)]
     order = list(DRIVER_NAMES)
+    kind = traffic({d["key"]: d["level"] for d in drivers})
     drivers.sort(key=lambda d: (-d["level"], order.index(d["key"])))
     main = [d["name"] for d in drivers if d["level"] >= 2]
     if x.v7 is None and not x.installs:
@@ -285,19 +322,62 @@ def growth_drivers(x: Inputs) -> dict:
         verdict = "Рост слабый, явного драйвера нет."
     else:
         verdict = "Явного драйвера не видно: соберите ключи игры, чтобы проверить поиск."
-    return {"verdict": verdict, "drivers": drivers}
+    return {"verdict": verdict, "drivers": drivers, "traffic": traffic_payload(kind)}
 
 
 # ----------------------------- loading -----------------------------
 
-def genre_ratings_per_k(db: Session, genre_id: str | None) -> float | None:
-    """Median ratings per 1000 installs among tracked games of the genre."""
-    if not genre_id:
-        return None
-    rows = db.execute(select(App.ratings, App.real_installs).join(GameMetrics, GameMetrics.app_id == App.app_id)
-                      .where(App.genre_id == genre_id, App.real_installs >= 10_000, App.ratings.is_not(None))).all()
-    rates = [r * 1000 / i for r, i in rows if i]
-    return round(median(rates), 2) if len(rates) >= MIN_GENRE_SAMPLE else None
+def speed_band(v7: float | None) -> int | None:
+    return int(math.log2(v7)) if v7 and v7 >= 1 else None
+
+
+class RatingNorms:
+    """Typical ratings per 1000 installs: per genre, and among young games growing about as fast
+    (within ~2x either way). rows: (genre_id, v7, age_days, ratings, installs) of tracked games."""
+
+    def __init__(self, rows):
+        self.genre: dict[str | None, list[float]] = {}
+        self.young: dict[tuple[str | None, int], list[float]] = {}
+        for genre, v7, age, ratings, installs in rows:
+            if ratings is None or not installs or installs < 10_000:
+                continue
+            rate = ratings * 1000 / installs
+            self.genre.setdefault(genre, []).append(rate)
+            band = speed_band(v7)
+            if band is not None and age is not None and age <= PEER_MAX_AGE:
+                self.young.setdefault((genre, band), []).append(rate)
+                self.young.setdefault((None, band), []).append(rate)
+        self._cache: dict = {}
+
+    def _median(self, key, rates: list[float]) -> float | None:
+        if key not in self._cache:
+            self._cache[key] = round(median(rates), 2) if len(rates) >= MIN_GENRE_SAMPLE else None
+        return self._cache[key]
+
+    def _near(self, genre: str | None, band: int) -> list[float]:
+        return [r for b in (band - 1, band, band + 1) for r in self.young.get((genre, b), [])]
+
+    def genre_median(self, genre: str | None) -> float | None:
+        return self._median(("genre", genre), self.genre.get(genre, [])) if genre else None
+
+    def peer_median(self, genre: str | None, v7: float | None) -> float | None:
+        band = speed_band(v7)
+        if band is None or not genre:
+            return None
+        own = self._median(("peer", genre, band), self._near(genre, band))
+        if own is not None:
+            return own
+        # A small genre: the speed effect seen across all genres, applied to its own median
+        overall, g_med = self._median(("peer", None, band), self._near(None, band)), self.genre_median(genre)
+        all_med = self._median(("all",), [r for rs in self.genre.values() for r in rs])
+        return round(g_med * overall / all_med, 2) if overall and g_med and all_med else None
+
+
+def rating_norms(db: Session) -> RatingNorms:
+    return RatingNorms(db.execute(select(App.genre_id, GameMetrics.v7, GameMetrics.age_days, App.ratings,
+                                         App.real_installs)
+                                  .join(GameMetrics, GameMetrics.app_id == App.app_id)
+                                  .where(App.pre_register.is_(False))).all())
 
 
 def neighbours(db: Session, app: App, keyword_ids: list[int]) -> list[dict]:
@@ -346,7 +426,7 @@ def timeline(db: Session, app: App, updates: list[dict], spikes: list[dict]) -> 
 
 
 def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_rows: list,
-            keyword_hits: list[dict], genre_rate: float | None) -> dict:
+            keyword_hits: list[dict], norms: RatingNorms) -> dict:
     """snaps: Snapshot rows by date; chart_rows: ChartDaily rows by date; keyword_hits: the game's ranks."""
     points = change_points([(s.date, s.real_installs) for s in snaps])
     updates = detect_updates([(s.date, s.version) for s in snaps])
@@ -367,6 +447,8 @@ def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_row
 
     effects = update_effects(points, updates)
     spikes = detect_spikes(points, chart_counts, updates)
+    genre_rate = norms.genre_median(app.genre_id)
+    peer_rate = norms.peer_median(app.genre_id, m.v7 if m else None)
     ratings_per_k = round(app.ratings * 1000 / app.real_installs, 2) \
         if app.ratings is not None and app.real_installs and not app.pre_register else None
     studio = (0, 0, 0)
@@ -380,7 +462,8 @@ def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_row
         search_visibility=m.search_visibility if m else 0, keyword_hits=keyword_hits,
         charts_now=charts_now, chart_peak=peak, breadth_delta7=m.breadth_delta7 if m else 0,
         flags=list(m.brand_flags or []) if m else [], soft_launch=bool(app.soft_launch),
-        ratings_per_k=ratings_per_k, genre_ratings_per_k=genre_rate, spikes=spikes, effects=effects,
+        ratings_per_k=ratings_per_k, genre_ratings_per_k=genre_rate, peer_ratings_per_k=peer_rate,
+        spikes=spikes, effects=effects,
         versions_seen=sum(1 for s in snaps if s.version),
         studio_games=studio[0], studio_installs=int(studio[1]),
         studio_ratings_per_k=round(studio[2] * 1000 / studio[1], 2) if studio[1] else None,
@@ -390,8 +473,11 @@ def analyze(db: Session, app: App, m: GameMetrics | None, snaps: list, chart_row
 
     facts = []
     if ratings_per_k is not None:
+        norms_txt = [f"медиана жанра {fmt_f(genre_rate)}"] if genre_rate else []
+        if peer_rate:
+            norms_txt.append(f"у растущих так же быстро {fmt_f(peer_rate)}")
         facts.append(f"Оценок на 1000 установок: {fmt_f(ratings_per_k)}"
-                     + (f" (медиана жанра {fmt_f(genre_rate)})" if genre_rate else ""))
+                     + (f" ({', '.join(norms_txt)})" if norms_txt else ""))
     monet = [w for w, on in (("реклама", app.contains_ads), ("покупки в игре", app.offers_iap)) if on]
     facts.append("Монетизация: " + (" + ".join(monet) if monet else "без рекламы и покупок"))
     if app.last_updated:

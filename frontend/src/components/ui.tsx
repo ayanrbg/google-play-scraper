@@ -116,11 +116,25 @@ export function Sparkline({ data, width = 110, height = 28 }: { data: (number | 
   );
 }
 
-export function Flags({ flags, prereg, age, softLaunch, revival, hidden }: {
+const TRAFFIC_FLAGS: Record<string, [string, string]> = {
+  organic: ["органика", "Установки объясняются поиском и чартами, признаков закупки нет"],
+  mixed: ["смешанный", "Есть признаки закупки, но игра заметна в поиске или чартах: проверьте место по её ключам"],
+  external: ["извне стора", "Растёт быстро не из поиска и чартов, признаков закупки нет: скорее соцсети или подборки Google"],
+  paid: ["закупка", "Признаки закупки трафика, а в поиске и чартах почти не видна"],
+};
+
+export function Flags({ flags, prereg, age, softLaunch, revival, hidden, traffic }: {
   flags: string[]; prereg?: boolean; age?: number | null; softLaunch?: string[] | null; revival?: boolean; hidden?: boolean;
+  traffic?: string | null;
 }) {
+  const t = traffic ? TRAFFIC_FLAGS[traffic] : undefined;
   return (
     <>
+      {t && (
+        <span className={`flag traffic-${traffic}`} title={t[1]}>
+          {t[0]}
+        </span>
+      )}
       {hidden && (
         <span className="flag gem" title="Скрытая находка: молодая, растёт, не бренд — и почти не видна в чартах. Такую руками не найти.">
           ◆ находка
