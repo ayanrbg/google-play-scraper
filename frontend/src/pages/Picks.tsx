@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Game, api } from "../api";
-import { CardStat, Empty, Loader, PageSub } from "../components/ui";
+import { CardStat, Empty, Flags, Loader, PageSub } from "../components/ui";
 import { COUNTRY_NAMES, MARK_LABELS, fmtAccel, fmtAge, fmtDateTime, fmtN, fmtRating } from "../format";
 import { MarkButtons } from "./Radar";
 import { roomText } from "./Niches";
@@ -17,6 +17,8 @@ type Pick = Game & {
     keys: PickKey[]; rivals: Rival[]; added_at: string; updated_at: string;
   };
 };
+
+const NEW_DAYS = 7;   // picks added this recently get a "new" badge
 
 export default function Picks() {
   const qc = useQueryClient();
@@ -42,8 +44,9 @@ export default function Picks() {
         <div>
           <h1 className="page-title">Под реализацию</h1>
           <PageSub>
-            Игры, отобранные вручную по данным базы, — каждая как пример ниши. <b>Растут органически</b>: нет признаков
-            закупки трафика, издателя или бренда. <b>В поиске есть куда зайти</b>: по запросам ниши в топ-10 уже пробились
+            Игры, отобранные вручную по данным базы, — каждая как пример ниши. <b>Растут без закупки</b>: установки
+            объясняются поиском и чартами, а не рекламой, и это не крупный издатель или бренд. Если признаки закупки всё же
+            есть, игра помечена «смешанный», и место по её ключам проверено отдельно. <b>В поиске есть куда зайти</b>: по запросам ниши в топ-10 уже пробились
             молодые игры других студий, и в топе есть места, которые может занять новичок (колонка «Место для нас»). Запросы взяты из разных языковых рынков:
             с локализацией можно заходить сразу в несколько. Цифры живые, обновляются каждый день. Текст разбора
             и ключи — на дату подборки{q.data?.updated_at ? ` (${fmtDateTime(q.data.updated_at)})` : ""}.
@@ -114,7 +117,9 @@ function PickCard({ g, n, onMark, folded }: { g: Pick; n: number; onMark: (s: st
             <span className="app-title">{g.title}</span>
             <span className="app-dev">
               {g.developer}
-              {g.genre ? ` · ${g.genre}` : ""}
+              {g.genre ? ` · ${g.genre}` : ""}{" "}
+              {Date.now() - new Date(p.added_at).getTime() < NEW_DAYS * 86400e3 && <span className="flag new">новое</span>}
+              <Flags flags={[]} traffic={g.traffic} />
             </span>
           </span>
         </Link>
