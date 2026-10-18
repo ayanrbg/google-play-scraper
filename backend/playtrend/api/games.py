@@ -334,12 +334,17 @@ def request_keys(app_id: str, request: Request, ctx: Ctx = Depends(viewer), db: 
     if not db.get(App, app_id):
         raise HTTPException(404, "not_found")
     r = db.get(KeysReport, app_id)
+    if r and r.status == "pending" and r.auto:    # queued by the daily run: someone wants it now
+        r.auto, r.requested_at, r.requested_by = False, datetime.utcnow(), ctx.user.id if ctx.user else None
+        db.flush()
+        return keys_payload(db, r)
     if r and r.status in ("pending", "running"):
         return keys_payload(db, r)
     if (r and r.status == "done" and r.finished_at and not ctx.is_superadmin
             and r.finished_at > datetime.utcnow() - timedelta(hours=KEYS_FRESH_HOURS)):
         raise HTTPException(409, "keys_fresh")
-    if db.scalar(select(func.count()).select_from(KeysReport).where(KeysReport.status == "pending")) >= KEYS_QUEUE_MAX:
+    if db.scalar(select(func.count()).select_from(KeysReport).where(
+            KeysReport.status == "pending", KeysReport.auto.is_(False))) >= KEYS_QUEUE_MAX:
         raise HTTPException(429, "keys_queue_full")
     if not ctx.user:
         ip = ratelimit.client_ip(request)
@@ -347,7 +352,8 @@ def request_keys(app_id: str, request: Request, ctx: Ctx = Depends(viewer), db: 
         if wait:
             raise HTTPException(429, "rate_limited", headers={"Retry-After": str(wait)})
         guest_today = db.scalar(select(func.count()).select_from(KeysReport).where(
-            KeysReport.requested_by.is_(None), KeysReport.requested_at > datetime.utcnow() - timedelta(days=1)))
+            KeysReport.requested_by.is_(None), KeysReport.auto.is_(False),
+            KeysReport.requested_at > datetime.utcnow() - timedelta(days=1)))
         if guest_today >= get_settings().guest_keys_per_day:
             raise HTTPException(429, "keys_guest_budget")
         ratelimit.guest_keys_record(ip)
@@ -355,7 +361,7 @@ def request_keys(app_id: str, request: Request, ctx: Ctx = Depends(viewer), db: 
         r = KeysReport(app_id=app_id)
         db.add(r)
     r.status, r.requested_at, r.error, r.progress = "pending", datetime.utcnow(), None, {}
-    r.requested_by = ctx.user.id if ctx.user else None
+    r.requested_by, r.auto = (ctx.user.id if ctx.user else None), False
     db.flush()
     return keys_payload(db, r)
 

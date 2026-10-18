@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     # Keys reports guests (not signed in) may order per day, all IPs together: each costs ~500 proxy requests
     guest_keys_per_day: int = 40
+    # Fast young games whose keys the daily run queues by itself (~7 min each without proxies)
+    keys_auto_per_day: int = 25
+    keys_auto_refresh_days: int = 30
 
     # Scraping pace. Google throttles by IP, so keep this polite.
     requests_per_second: float = 2.0   # from the server's own IP

@@ -16,13 +16,16 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import func, select
 
 from playtrend.db import session_scope
-from playtrend.models import App, ChartDaily, Keyword, KeysReport, KeywordRank
+from playtrend.models import App, ChartDaily, GameMetrics, Keyword, KeysReport, KeywordRank
 from playtrend.pipeline.common import log, parallel
 from playtrend.pipeline.keyword_markets import MARKETS, Market
 from playtrend.pipeline.keywords import add_result_stubs, demand_from_observation, save_search_results
 from playtrend.play import client
 from playtrend.play.http import NotFound
+from playtrend.settings import get_settings
 
+AUTO_MAX_AGE = 180              # games the daily run collects keys for by itself...
+AUTO_MIN_V7 = 1000              # ...growing at least this fast
 SEARCH_DEPTH = 30               # positions below this count as "not found"
 MAX_TERMS = 30                  # English/US market
 MAX_TERMS_LOCAL = 18            # a market with a translated listing
@@ -407,6 +410,29 @@ def build_report(app_id: str, progress=lambda p: None) -> dict:
 
 # ----------------------------- queue -----------------------------
 
+def queue_fast_games(limit: int | None = None, today: datetime | None = None) -> dict:
+    """Queue keys of the fastest young non-brand games that have none fresh. Without them a game
+    is invisible to key-first niche search and its traffic looks like it comes from outside the store."""
+    cfg = get_settings()
+    limit = cfg.keys_auto_per_day if limit is None else limit
+    now = today or datetime.utcnow()
+    fresh = now - timedelta(days=cfg.keys_auto_refresh_days)
+    with session_scope() as s:
+        covered = select(KeysReport.app_id).where(
+            (KeysReport.status.in_(["pending", "running"])) | (KeysReport.finished_at > fresh))
+        ids = s.scalars(select(GameMetrics.app_id).join(App, App.app_id == GameMetrics.app_id).where(
+            App.status == "active", App.pre_register.is_(False), GameMetrics.age_days <= AUTO_MAX_AGE,
+            GameMetrics.v7 >= AUTO_MIN_V7, GameMetrics.flag_major.is_(False), GameMetrics.flag_franchise.is_(False),
+            GameMetrics.flag_cash.is_(False), GameMetrics.app_id.not_in(covered))
+            .order_by(GameMetrics.v7.desc()).limit(limit)).all()
+        for app_id in ids:
+            r = s.get(KeysReport, app_id) or KeysReport(app_id=app_id)
+            r.status, r.requested_at, r.requested_by, r.auto = "pending", now, None, True
+            r.error, r.progress = None, {}
+            s.merge(r)
+    return {"queued": len(ids)}
+
+
 def reset_interrupted():
     """A report cut off by a worker restart goes back to the queue."""
     with session_scope() as s:
@@ -415,10 +441,10 @@ def reset_interrupted():
 
 
 def process_next() -> bool:
-    """Build the oldest requested report. False when the queue is empty."""
+    """Build the oldest requested report, people's requests before the daily run's. False when the queue is empty."""
     with session_scope() as s:
         r = s.scalars(select(KeysReport).where(KeysReport.status == "pending")
-                      .order_by(KeysReport.requested_at).limit(1)).first()
+                      .order_by(KeysReport.auto, KeysReport.requested_at).limit(1)).first()
         if r is None:
             return False
         r.status, r.started_at, r.error, r.progress = "running", datetime.utcnow(), None, {}

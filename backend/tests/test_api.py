@@ -333,3 +333,33 @@ def test_picks_are_private_to_the_team(client):
     with session_scope() as s:   # a new list replaces the old one
         assert picks.load(s, s.scalar(select(Workspace)).id, [item]) == {"loaded": 1, "removed": 1}
     assert [g["app_id"] for g in client.get("/api/picks").json()["items"]] == ["indie.hit"]
+
+
+def test_daily_run_queues_keys_of_fast_young_games(client, monkeypatch):
+    from playtrend.models import KeysReport
+    from playtrend.pipeline import app_keys
+    from playtrend.settings import get_settings
+    seed_radar()
+    assert app_keys.queue_fast_games() == {"queued": 1}          # not the brand, not the old slow game
+    assert app_keys.queue_fast_games() == {"queued": 0}          # already queued
+    with session_scope() as s:
+        assert s.get(KeysReport, "indie.hit").auto is True
+    # an automatic report does not use the guests' budget or the queue cap...
+    monkeypatch.setattr(get_settings(), "guest_keys_per_day", 1)
+    assert TestClient(app).post("/api/games/slow.game/keys").status_code == 200
+    # ...and people's requests are built first, whenever they came
+    built = []
+    monkeypatch.setattr(app_keys, "build_report", lambda app_id, progress: built.append(app_id) or
+                        {"summary": {"terms": 0, "ranked_top10": 0}})
+    while app_keys.process_next():
+        pass
+    assert built == ["slow.game", "indie.hit"]
+    # a fresh report is not queued again for a month
+    assert app_keys.queue_fast_games() == {"queued": 0}
+    # someone asking for a game the run queued moves it ahead
+    with session_scope() as s:
+        r = s.get(KeysReport, "indie.hit")
+        r.status, r.auto, r.finished_at = "pending", True, None
+    assert client.post("/api/games/indie.hit/keys").status_code == 200
+    with session_scope() as s:
+        assert s.get(KeysReport, "indie.hit").auto is False

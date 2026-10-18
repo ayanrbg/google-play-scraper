@@ -275,6 +275,8 @@ class KeysReport(Base):
     error: Mapped[str | None] = mapped_column(Text)
     progress: Mapped[dict] = mapped_column(JSON, default=dict)
     result: Mapped[dict | None] = mapped_column(JSON)   # the last finished report stays while a new one runs
+    # Queued by the daily run for a fast young game nobody asked about: built after requested ones
+    auto: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class SeedState(Base):

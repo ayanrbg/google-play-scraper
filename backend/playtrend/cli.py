@@ -76,7 +76,7 @@ def cleanup():
 
 
 def jobs():
-    from playtrend.pipeline import charts, details, entry, expand, keywords, metrics
+    from playtrend.pipeline import app_keys, charts, details, entry, expand, keywords, metrics
     return {
         "charts": charts.run,
         "expand": expand.run,
@@ -87,11 +87,12 @@ def jobs():
         "entry": entry.run,
         "cleanup": cleanup,
         "softlaunch": details.backfill_soft_launch,
+        "autokeys": app_keys.queue_fast_games,
     }
 
 
 INTERRUPTED = "прервано перезапуском воркера"
-DAILY_ORDER = ["charts", "expand", "enrich", "track", "metrics", "keywords", "enrich", "metrics", "entry", "cleanup"]
+DAILY_ORDER = ["charts", "expand", "enrich", "track", "metrics", "keywords", "enrich", "metrics", "entry", "autokeys", "cleanup"]
 
 
 def daily():
