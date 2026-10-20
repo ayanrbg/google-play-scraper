@@ -141,6 +141,8 @@ def list_new_queries(
         conds += [SuggestTerm.baseline.is_(False), SuggestTerm.first_seen >= today - timedelta(days=NEW_QUERY_DAYS)]
     elif kind == "young":
         conds.append(SuggestTerm.phrase_birth >= today - timedelta(days=YOUNG_PHRASE_DAYS))
+    elif kind == "wave":     # three or more studios put the phrase in a title within a month
+        conds += [SuggestTerm.phrase_devs_30d >= 3, SuggestTerm.phrase_birth >= today - timedelta(days=YOUNG_PHRASE_DAYS)]
     if hide_paid:
         conds.append(SuggestTerm.leader_paid.is_(False))
     if q:
@@ -167,7 +169,8 @@ def list_new_queries(
             "phrase": t.phrase, "phrase_birth": t.phrase_birth,
             "phrase_age": (today - t.phrase_birth).days if t.phrase_birth else None,
             "phrase_titles": t.phrase_titles, "phrase_titles_30d": t.phrase_titles_30d,
-            "relevant_top": t.relevant_top, "score": t.score, "leader_paid": t.leader_paid,
+            "phrase_devs_30d": t.phrase_devs_30d, "relevant_top": t.relevant_top, "score": t.score,
+            "leader_paid": t.leader_paid, "leader_explosive": t.leader_explosive,
             "keyword": {"id": k.id, "demand": k.demand, "games_share": k.games_share, "room": k.room,
                         "room_best": k.room_best, "entry_score": k.entry_score} if k else None,
             "leader": {"app_id": a.app_id, "title": a.title, "icon_url": a.icon_url, "installs": a.real_installs,

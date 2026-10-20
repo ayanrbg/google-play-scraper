@@ -6,6 +6,12 @@ ones and the three-letter starts of words that game titles and game queries use 
 new, or has just grown popular enough to make the five suggestions. A prefix crawled for the first
 time only sets the baseline: what it shows may have existed for years.
 
+Short prefixes only reach queries that are already huge: "boo" is Booking and Boost Mobile, so
+"bomb chip challenge" never shows there. So the detector also types the words and word pairs that
+several studios put in fresh game titles while old games hardly used them - a clone wave around a
+new idea, the way "bomb chip" looked in February 2026 with three tiny games - and their "word "
+continuations.
+
 Each new query is then searched once: is it a game query, who ranks, and how many of the top
 results actually carry the phrase - few means a gap a new game with the phrase in its title can
 fill. The phrase's birth (release of the first app with all its words in the title) also flags
@@ -34,8 +40,10 @@ from playtrend.settings import get_settings
 
 RECHECK_DAYS = 7         # search results of a candidate are refreshed this often
 SEEN_RECENTLY = 3        # only queries autocomplete still suggests are worth a search
-PAID_YOUNG_DAYS = 60     # a game past 1M installs this young exploded: usually bought or viral traffic
-PAID_YOUNG_INSTALLS = 1_000_000
+EXPLOSIVE_DAYS = 60      # a game past 1M installs this young exploded: bought, or viral - and viral demand
+EXPLOSIVE_INSTALLS = 1_000_000   # is what clones live on, so such leaders are marked, not hidden
+FRESH_TITLE_DAYS = 90    # games this young lend their title words to the word queries
+WAVE_DAYS = 30           # studios that put the phrase in a title this recently make a clone wave
 SEED = "новые запросы"
 
 # Words that say nothing about what the game is: left out of the phrase
@@ -77,8 +85,19 @@ def game_prefixes(s, mk: DMarket, limit: int) -> list[str]:
 
 def ensure_prefixes(s, mk: DMarket, game_limit: int):
     two = [a + b for a in mk.alphabet for b in mk.alphabet]
-    rows = [{"prefix": p, "lang": mk.lang, "country": mk.country} for p in two + game_prefixes(s, mk, game_limit)]
+    rows = [{"prefix": p, "lang": mk.lang, "country": mk.country, "kind": "short"}
+            for p in two + game_prefixes(s, mk, game_limit)]
     upsert(s, SuggestPrefix, rows, key=["prefix", "lang", "country"], update=[])
+
+
+def word_queries(phrases: list[str]) -> list[str]:
+    """What to type for each fresh title phrase: the phrase, and the phrase plus a space (its continuations)."""
+    return [q for p in phrases for q in (p, p + " ")]
+
+
+def ensure_words(s, mk: DMarket, queries: list[str]):
+    upsert(s, SuggestPrefix, [{"prefix": q, "lang": mk.lang, "country": mk.country, "kind": "word"} for q in queries],
+           key=["prefix", "lang", "country"], update=[])
 
 
 # ----------------------------- observations -----------------------------
@@ -114,11 +133,14 @@ def record(s, mk: DMarket, seen: dict[str, list[str]], first_crawl: set[str], to
     return {"terms": len(obs), "new": new}
 
 
-def crawl(mk: DMarket, budget: int, today: date) -> dict:
+def crawl(mk: DMarket, budget: int, today: date, kind: str = "short", only: list[str] | None = None) -> dict:
+    """Type a day's share of one kind of prefixes, stalest first; `only` keeps word queries to the current ones."""
     with session_scope() as s:
-        rows = s.execute(select(SuggestPrefix.prefix, SuggestPrefix.first_crawled).where(
-            SuggestPrefix.lang == mk.lang, SuggestPrefix.country == mk.country)
-            .order_by(SuggestPrefix.crawled_at.is_not(None), SuggestPrefix.crawled_at).limit(budget)).all()
+        q = select(SuggestPrefix.prefix, SuggestPrefix.first_crawled).where(
+            SuggestPrefix.lang == mk.lang, SuggestPrefix.country == mk.country, SuggestPrefix.kind == kind)
+        if only is not None:
+            q = q.where(SuggestPrefix.prefix.in_(only))
+        rows = s.execute(q.order_by(SuggestPrefix.crawled_at.is_not(None), SuggestPrefix.crawled_at).limit(budget)).all()
     first_crawl = {p for p, first in rows if first is None or first == today}
     seen: dict[str, list[str]] = {}
     for prefix, terms, err in parallel(lambda p: client.suggest(p, mk.lang, mk.country), [p for p, _ in rows],
@@ -144,15 +166,18 @@ class TitleIndex:
         self.today = today
         self.apps: dict[str, tuple] = {}
         self.by_word: dict[str, set[str]] = defaultdict(set)
+        self.recent_titles: list[tuple[str, str]] = []
         rows = s.execute(select(App.app_id, App.title, App.released, App.is_game, App.real_installs,
-                                GameMetrics.v7, GameMetrics.traffic, GameMetrics.brand_flags)
+                                GameMetrics.v7, GameMetrics.traffic, GameMetrics.brand_flags, App.developer_id)
                          .outerjoin(GameMetrics, GameMetrics.app_id == App.app_id)
                          .where(App.released.is_not(None))).all()
-        for app_id, title, released, is_game, installs, v7, traffic, flags in rows:
-            self.apps[app_id] = (released, is_game, installs or 0, v7 or 0, traffic, set(flags or []))
+        for app_id, title, released, is_game, installs, v7, traffic, flags, dev in rows:
+            self.apps[app_id] = (released, is_game, installs or 0, v7 or 0, traffic, set(flags or []), dev)
             for w in set(words(title)):
                 if len(w) >= 3:
                     self.by_word[w].add(app_id)
+            if is_game and (today - released).days <= FRESH_TITLE_DAYS:
+                self.recent_titles.append((app_id, title))
 
     def matching(self, phrase: tuple[str, ...]) -> set[str]:
         sets = [self.by_word.get(w) for w in phrase]
@@ -163,23 +188,46 @@ class TitleIndex:
     def stats(self, phrase: tuple[str, ...]) -> dict:
         ids = self.matching(phrase)
         if not ids:
-            return {"phrase_birth": None, "phrase_titles": 0, "phrase_titles_30d": 0, "leader_app_id": None,
-                    "leader_paid": False}
+            return {"phrase_birth": None, "phrase_titles": 0, "phrase_titles_30d": 0, "phrase_devs_30d": 0,
+                    "leader_app_id": None, "leader_paid": False, "leader_explosive": False}
         released = [self.apps[i][0] for i in ids]
+        recent = [i for i in ids if (self.today - self.apps[i][0]).days <= WAVE_DAYS]
         games = [i for i in ids if self.apps[i][1] and not self.apps[i][5] & {"major", "franchise"}]
         leader = max(games, key=lambda i: self.apps[i][3], default=None)
         return {
             "phrase_birth": min(released),
             "phrase_titles": len(ids),
-            "phrase_titles_30d": sum(1 for r in released if (self.today - r).days <= 30),
+            "phrase_titles_30d": len(recent),
+            "phrase_devs_30d": len({self.apps[i][6] or i for i in recent}),
             "leader_app_id": leader,
-            "leader_paid": bool(leader) and self.looks_paid(leader),
+            # Hidden only when bought and nothing else: paid signs while barely visible in search and charts
+            "leader_paid": bool(leader) and self.apps[leader][4] == "paid",
+            "leader_explosive": bool(leader) and self.exploded(leader),
         }
 
-    def looks_paid(self, app_id: str) -> bool:
-        released, _, installs, _, traffic, _ = self.apps[app_id]
-        exploded = (self.today - released).days <= PAID_YOUNG_DAYS and installs >= PAID_YOUNG_INSTALLS
-        return traffic in ("paid", "mixed") or exploded
+    def exploded(self, app_id: str) -> bool:
+        released, _, installs, *_ = self.apps[app_id]
+        return (self.today - released).days <= EXPLOSIVE_DAYS and installs >= EXPLOSIVE_INSTALLS
+
+    def old_titles(self, phrase: tuple[str, ...]) -> int:
+        return sum(1 for i in self.matching(phrase) if (self.today - self.apps[i][0]).days > 365)
+
+    def fresh_phrases(self, limit: int) -> list[str]:
+        """Words and word pairs that at least two studios put in titles of games out within FRESH_TITLE_DAYS,
+        while old games hardly used them: a new idea others started copying. Most studios first."""
+        devs: dict[str, set] = defaultdict(set)
+        for app_id, title in self.recent_titles:
+            toks = [w for w in words(title) if w not in GENERIC and len(w) >= 3 and not w.isdigit() and w.isascii()]
+            for g in set(toks) | {f"{a} {b}" for a, b in zip(toks, toks[1:]) if a != b}:
+                devs[g].add(self.apps[app_id][6] or app_id)
+        out = []
+        for g, ds in devs.items():
+            if len(ds) < 2 or len(g) > 60:
+                continue
+            if self.old_titles(tuple(g.split())) > (2 if " " in g else 5):
+                continue
+            out.append((-len(ds), " " not in g, g))     # pairs before single words with as many studios
+        return [g for *_, g in sorted(out)[:limit]]
 
 
 def score(t: SuggestTerm, k: Keyword | None, leader_v7: float, today: date) -> float | None:
@@ -200,6 +248,9 @@ def score(t: SuggestTerm, k: Keyword | None, leader_v7: float, today: date) -> f
     gap = 1.0 if rel <= 1 else 0.75 if rel <= 3 else 0.45 if rel <= 5 else 0.2
     demand = min(1.0, (k.demand or 0) / 80)
     proof = 0.4 + 0.6 * min(1.0, math.log10(leader_v7 + 1) / 5) if leader_v7 else 0.4
+    # Several studios copying the idea within a month is proof too, before anyone has grown on it
+    devs = t.phrase_devs_30d or 0
+    proof = max(proof, 0.8 if devs >= 3 else 0.6 if devs >= 2 else 0)
     return round(100 * fresh * gap * (0.5 + 0.5 * demand) * proof, 1)
 
 
@@ -230,8 +281,9 @@ def analyze(mk: DMarket, index: TitleIndex, budget: int, today: date) -> dict:
                 return None
             if not t.baseline and (today - t.first_seen).days <= NEW_DAYS:
                 return (0, -t.first_seen.toordinal())
-            if t.phrase_birth and t.phrase_birth >= young and t.leader_app_id:
-                return (1, -index.apps[t.leader_app_id][3])
+            if t.phrase_birth and t.phrase_birth >= young and (t.leader_app_id or (t.phrase_devs_30d or 0) >= 2):
+                lead = index.apps[t.leader_app_id][3] if t.leader_app_id in index.apps else 0
+                return (1, -(t.phrase_devs_30d or 0), -lead)
             return None
         queue = sorted((w, t.id) for t in terms if (w := wanted(t)) is not None)[:budget]
         ids = {i for _, i in queue}
@@ -289,15 +341,25 @@ def run():
     today = date.today()
     with job_run("newqueries") as stats:
         with session_scope() as s:
+            index = TitleIndex(s, today)
+        phrases = index.fresh_phrases(cfg.new_queries_title_phrases)
+        queries = word_queries(phrases)
+        stats["title_phrases"] = phrases[:30]
+        with session_scope() as s:
             for mk in MARKETS:
                 ensure_prefixes(s, mk, cfg.new_queries_game_prefixes)
+                ensure_words(s, mk, queries)
         for mk in MARKETS:
             try:
-                stats.setdefault("markets", {})[mk.country] = crawl(mk, cfg.new_queries_prefixes_per_market, today)
+                short = crawl(mk, cfg.new_queries_prefixes_per_market, today)
+                word = crawl(mk, len(queries), today, kind="word", only=queries)
+                stats.setdefault("markets", {})[mk.country] = {
+                    **{k: short[k] + word[k] for k in ("prefixes", "failed", "terms", "new")},
+                    "word_queries": word["prefixes"]}
             except Exception as e:  # one market failing must not cost the others
                 log.warning("новые запросы %s-%s: %s", mk.lang, mk.country, e)
         with session_scope() as s:
-            index = TitleIndex(s, today)
+            index = TitleIndex(s, today)     # again: the crawl's searches below add the cards they find
         for mk in MARKETS:
             try:
                 stats["markets"].setdefault(mk.country, {}).update(

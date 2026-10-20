@@ -133,9 +133,11 @@ export type NewQuery = {
   phrase_age: number | null;
   phrase_titles: number | null;
   phrase_titles_30d: number | null;
+  phrase_devs_30d: number | null;   // studios that put the phrase in a title within 30 days (a clone wave)
   relevant_top: number | null;   // top-10 results that carry the phrase in the title
   score: number | null;
-  leader_paid: boolean;
+  leader_paid: boolean;        // bought and nothing else: hidden by default
+  leader_explosive: boolean;   // 1M+ installs within two months: bought or viral, only marked
   keyword: { id: number; demand: number; games_share: number | null; room: number | null; room_best: number | null; entry_score: number | null } | null;
   leader: { app_id: string; title: string | null; icon_url: string | null; installs: number | null; age_days: number | null; v7: number | null; traffic: string | null } | null;
 };

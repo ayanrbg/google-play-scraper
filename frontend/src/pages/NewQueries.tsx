@@ -50,9 +50,11 @@ export default function NewQueries() {
             Что Google Play недавно начал подсказывать в поиске. Каждый день детектор вводит в автодополнение короткие начала
             слов в 7 странах. <b>Новый</b> — запрос, которого раньше в подсказках не было. <b>Возраст фразы</b> — сколько
             прошло с выхода первой игры, в названии которой есть все слова запроса: так видны и молодые запросы, которые мы
-            застали с первого дня. <b>С фразой в выдаче</b> — сколько игр из топ-10 по этому запросу действительно про него:
-            если мало, новая игра с этой фразой в названии легко встаёт наверх. Так выглядел «bomb chip challenge», когда под
-            него стоило делать игру.
+            застали с первого дня. <b>Волна клонов</b> — фразу за месяц поставили в названия три студии и больше: так
+            Bomb Chip выглядел в феврале, ещё до хитов. Кроме коротких начал детектор вводит слова и пары слов из названий
+            свежих игр («bomb chip», «bomb chip …»): короткие начала занимают Booking и Boom Beach. <b>С фразой в выдаче</b> —
+            сколько игр из топ-10 по этому запросу действительно про него: если мало, новая игра с этой фразой в названии
+            легко встаёт наверх.
             {data.data?.started && <> Детектор работает с {fmtDate(data.data.started)}: в первые дни все запросы считаются исходными, новые появятся со второго обхода.</>}
           </PageSub>
         </div>
@@ -71,10 +73,10 @@ export default function NewQueries() {
             </div>
           </FGroup>
           <FGroup title="Какие запросы">
-            <Seg options={[["all", "Все"], ["new", "Новые в подсказках"], ["young", "Молодые фразы"]]}
+            <Seg options={[["all", "Все"], ["new", "Новые в подсказках"], ["young", "Молодые фразы"], ["wave", "Волна клонов"]]}
                  value={f.get("kind")} onChange={(v) => f.set({ kind: v })} />
           </FGroup>
-          <FGroup title="Лидер с закупкой" hint="признаки закупки или взрывной старт: 1 млн+ за 2 месяца">
+          <FGroup title="Лидер на закупке" hint="признаки закупки, а в поиске и чартах почти не виден; взрывной старт только помечается">
             <Seg options={[["true", "Скрыть"], ["false", "Показать"]]} value={f.get("hide_paid")} onChange={(v) => f.set({ hide_paid: v })} />
           </FGroup>
           <FGroup title="Игр с фразой в топ-10 выдачи" hint="меньше — свободнее">
@@ -125,7 +127,7 @@ export default function NewQueries() {
                     <SortTh label="Оценка" field="score" sort={sort} dir={dir} onSort={sortBy} title="Новый игровой запрос, мало игр с фразой в выдаче, его ищут, и на нём уже растёт игра: 0–100" />
                     <SortTh label="Появился" field="first_seen" sort={sort} dir={dir} onSort={sortBy} title="Когда Google впервые подсказал запрос («с начала» — был уже на первом обходе)" />
                     <SortTh label="Фраза" field="phrase_birth" sort={sort} dir={dir} onSort={sortBy} right title="Сколько прошло с выхода первой игры со всеми словами запроса в названии" />
-                    <th className="r" title="Игр со словами запроса в названии: всего и вышедших за 30 дней">Игр с фразой</th>
+                    <th className="r" title="Игр со словами запроса в названии: всего и вышедших за 30 дней (от скольких студий)">Игр с фразой</th>
                     <SortTh label="В выдаче" field="relevant_top" sort={sort} dir={dir} onSort={sortBy} right title="Сколько из топ-10 выдачи по запросу действительно про него (фраза в названии)" />
                     <th className="r" title="Мест в топ-10, которые новичок может занять, и самое высокое из них">Места</th>
                     <SortTh label="Лидер фразы" field="leader_v7" sort={sort} dir={dir} onSort={sortBy} title="Самая быстрая игра с фразой в названии" />
@@ -152,7 +154,11 @@ export default function NewQueries() {
                       <td className={`r num ${(n.phrase_age ?? 9999) <= 150 ? "good" : ""}`}>{fmtAge(n.phrase_age)}</td>
                       <td className="r num">
                         {n.phrase_titles ?? "—"}
-                        {n.phrase_titles_30d ? <span className="faint"> (+{n.phrase_titles_30d})</span> : null}
+                        {n.phrase_titles_30d ? (
+                          <span className={(n.phrase_devs_30d ?? 0) >= 3 ? "good" : "faint"} title="вышло за 30 дней · студий">
+                            {" "}(+{n.phrase_titles_30d} · {n.phrase_devs_30d} студ.)
+                          </span>
+                        ) : null}
                       </td>
                       <td className={`r num ${(n.relevant_top ?? 10) <= 1 ? "good" : ""}`}>{n.relevant_top ?? "—"}/10</td>
                       <td className="r num">{n.keyword ? roomText(n.keyword) : "—"}</td>
@@ -184,8 +190,8 @@ function LeaderCell({ n }: { n: NewQuery }) {
         <div className="app-title">{l.title || l.app_id}</div>
         <div className="app-dev">
           {fmtN(l.v7)}/день · {fmtAge(l.age_days)} <Flags flags={[]} traffic={l.traffic} />
-          {n.leader_paid && l.traffic !== "paid" && l.traffic !== "mixed" && (
-            <span className="flag traffic-paid" title="Больше 1 млн установок за первые 2 месяца: обычно закупка или вирусное видео, а не поиск">взрывной старт</span>
+          {n.leader_explosive && (
+            <span className="flag traffic-mixed" title="Больше 1 млн установок за первые 2 месяца: закупка или вирусное видео. Вирусный спрос — то, на чём растут клоны в поиске (так было с Bomb Chip), поэтому не скрываем">взрывной старт</span>
           )}
         </div>
       </div>

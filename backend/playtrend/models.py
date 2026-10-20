@@ -294,9 +294,11 @@ class SuggestPrefix(Base):
     """A prefix typed into Google Play autocomplete by the new-queries detector, and when."""
     __tablename__ = "suggest_prefixes"
 
-    prefix: Mapped[str] = mapped_column(String(32), primary_key=True)
+    prefix: Mapped[str] = mapped_column(String(64), primary_key=True)
     lang: Mapped[str] = mapped_column(String(8), primary_key=True)
     country: Mapped[str] = mapped_column(String(8), primary_key=True)
+    # short: two/three letters; word: a word or word pair from fresh game titles, or it plus a space
+    kind: Mapped[str] = mapped_column(String(8), default="short")
     first_crawled: Mapped[date | None] = mapped_column(Date)
     crawled_at: Mapped[datetime | None] = mapped_column(DateTime)
 
@@ -317,7 +319,7 @@ class SuggestTerm(Base):
     last_seen: Mapped[date] = mapped_column(Date)
     days_seen: Mapped[int] = mapped_column(Integer, default=1)
     baseline: Mapped[bool] = mapped_column(Boolean, default=False)
-    prefix: Mapped[str | None] = mapped_column(String(32))       # shortest prefix that surfaced it
+    prefix: Mapped[str | None] = mapped_column(String(64))       # shortest prefix that surfaced it
     prefix_len: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int | None] = mapped_column(Integer)
     first_prefix_len: Mapped[int | None] = mapped_column(Integer)
@@ -326,9 +328,12 @@ class SuggestTerm(Base):
     phrase_birth: Mapped[date | None] = mapped_column(Date)
     phrase_titles: Mapped[int | None] = mapped_column(Integer)
     phrase_titles_30d: Mapped[int | None] = mapped_column(Integer)
+    phrase_devs_30d: Mapped[int | None] = mapped_column(Integer)  # studios that put it in a title within 30 days
     leader_app_id: Mapped[str | None] = mapped_column(String(255))
-    # The leading game's installs look bought (paid/mixed traffic) or exploded within weeks of release
+    # The leading game looks bought and nothing else (paid traffic, barely visible in search and charts)
     leader_paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    # It passed 1M installs within two months: bought or viral; only marked, viral demand is what clones live on
+    leader_explosive: Mapped[bool] = mapped_column(Boolean, default=False)
     relevant_top: Mapped[int | None] = mapped_column(Integer)     # top-10 results with the phrase in the title
     score: Mapped[float | None] = mapped_column(Float, index=True)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime)

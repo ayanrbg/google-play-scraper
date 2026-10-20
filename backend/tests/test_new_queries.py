@@ -40,10 +40,10 @@ def test_only_queries_shown_by_an_already_crawled_prefix_are_new():
         assert egg.first_prefix_len == 4 and egg.baseline
 
 
-def add_app(app_id, title, age, installs=10_000, v7=0, traffic="organic", is_game=True):
+def add_app(app_id, title, age, installs=10_000, v7=0, traffic="organic", is_game=True, dev=None):
     with session_scope() as s:
         s.add(App(app_id=app_id, title=title, released=TODAY - timedelta(days=age), is_game=is_game,
-                  real_installs=installs, details_at=datetime.utcnow(), status="active"))
+                  real_installs=installs, details_at=datetime.utcnow(), status="active", developer_id=dev or app_id))
         s.add(GameMetrics(app_id=app_id, v7=v7, traffic=traffic, brand_flags=[]))
 
 
@@ -56,7 +56,36 @@ def test_phrase_is_dated_by_its_first_game_and_led_by_the_fastest():
         st = TitleIndex(s, TODAY).stats(phrase_of("bomb chip game"))
     assert st["phrase_birth"] == TODAY - timedelta(days=90)
     assert (st["phrase_titles"], st["phrase_titles_30d"], st["leader_app_id"]) == (3, 1, "a.hit")
-    assert st["leader_paid"]     # 3M installs at 40 days: bought or viral, not search
+    # 3M installs at 40 days: bought or viral - marked, but not hidden, since viral demand is what clones live on
+    assert st["leader_explosive"] and not st["leader_paid"]
+
+
+def test_fresh_title_phrases_catch_a_clone_wave_early():
+    """February 2026: three tiny "Bomb Chip" games from three studios, no hit yet. The pair is fresh;
+    "chip" alone is old (poker and potato chip games), and one studio's own name is no wave."""
+    add_app("hd.bomb", "Bomb Chip Challenge", 75, installs=3_000, dev="hd")
+    add_app("cl.bomb", "Bomb Chip Challenge Game", 60, installs=900, dev="cleidimar")
+    add_app("tasc.bomb", "Bomb Chips Duo: Bomb Chip Party", 14, installs=200, dev="tasc")
+    add_app("solo.one", "Zorbix Quest", 20, dev="solo")
+    add_app("solo.two", "Zorbix Quest 2", 10, dev="solo")
+    for i in range(8):
+        add_app(f"old.chip{i}", f"Poker Chip Master {i}", 900 + i, dev=f"old{i}")
+    with session_scope() as s:
+        index = TitleIndex(s, TODAY)
+    phrases = index.fresh_phrases(50)
+    assert phrases[0] == "bomb chip"
+    assert "chip" not in phrases and "zorbix" not in phrases
+    assert new_queries.word_queries(["bomb chip"]) == ["bomb chip", "bomb chip "]
+    st = index.stats(phrase_of("bomb chip challenge"))
+    assert (st["phrase_titles"], st["phrase_devs_30d"]) == (3, 1)    # "challenge" says nothing: phrase is "bomb chip"
+
+
+def test_a_clone_wave_counts_as_proof_before_anyone_grows():
+    k = Keyword(term="x", demand=60, games_share=1.0, analyzed_at=datetime.utcnow())
+    base = dict(term="x", first_seen=TODAY, baseline=True, phrase_birth=TODAY - timedelta(days=70), relevant_top=2)
+    lone = new_queries.score(SuggestTerm(**base, phrase_devs_30d=1), k, 0, TODAY)
+    wave = new_queries.score(SuggestTerm(**base, phrase_devs_30d=3), k, 0, TODAY)
+    assert abs(wave - 2 * lone) < 0.2      # proof 0.8 instead of 0.4
 
 
 def test_score_wants_a_new_game_query_with_a_gap():
@@ -120,3 +149,24 @@ def test_detector_end_to_end(monkeypatch):
         t = s.scalar(select(SuggestTerm).where(SuggestTerm.term == "egg speed escape"))
         assert t.leader_app_id == "egg.lead" and t.relevant_top == 1 and t.score > 0
         assert s.get(Keyword, t.keyword_id).seed == new_queries.SEED
+
+
+def test_run_types_fresh_title_phrases(monkeypatch):
+    """Short prefixes never show "bomb chip challenge" (Booking and Boom Beach win there); the word query does."""
+    add_app("hd.bomb", "Bomb Chip Challenge", 75, installs=3_000, dev="hd")
+    add_app("cl.bomb", "Bomb Chip Game", 20, installs=900, dev="cleidimar")
+    typed = []
+
+    def suggest(p, lang, country):
+        typed.append(p)
+        return ["bomb chip challenge", "bomb chip challenge 2 player"] if p == "bomb chip " else ["booking", "boom beach"]
+    monkeypatch.setattr(new_queries, "MARKETS", [US])
+    monkeypatch.setattr(new_queries.client, "suggest", suggest)
+    monkeypatch.setattr(new_queries.client, "search", lambda *a, **k: [])
+    stats = new_queries.run()
+    assert "bomb chip" in stats["title_phrases"] and stats["markets"]["us"]["word_queries"] >= 2
+    assert {"bomb chip", "bomb chip "} <= set(typed)
+    with session_scope() as s:
+        t = s.scalar(select(SuggestTerm).where(SuggestTerm.term == "bomb chip challenge"))
+        assert t.prefix == "bomb chip " and t.phrase == "bomb chip" and t.phrase_titles == 2
+        assert s.get(SuggestPrefix, ("bomb chip ", "en", "us")).kind == "word"

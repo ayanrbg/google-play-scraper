@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     new_queries_prefixes_per_market: int = 900
     new_queries_search_per_market: int = 40
     new_queries_game_prefixes: int = 700
+    new_queries_title_phrases: int = 150   # fresh title words/pairs typed (and with a space) in every market
     new_queries_hour_utc: int = 12
 
     # Scheduler (UTC hour of the daily pipeline)
