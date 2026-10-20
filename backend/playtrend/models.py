@@ -290,6 +290,52 @@ class SeedState(Base):
     expanded_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class SuggestPrefix(Base):
+    """A prefix typed into Google Play autocomplete by the new-queries detector, and when."""
+    __tablename__ = "suggest_prefixes"
+
+    prefix: Mapped[str] = mapped_column(String(32), primary_key=True)
+    lang: Mapped[str] = mapped_column(String(8), primary_key=True)
+    country: Mapped[str] = mapped_column(String(8), primary_key=True)
+    first_crawled: Mapped[date | None] = mapped_column(Date)
+    crawled_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class SuggestTerm(Base):
+    """A query Google Play autocomplete suggested, since when, and what stands behind it.
+
+    baseline: seen on the first crawl of its prefix, so it may have existed long before (not "new").
+    Phrase: the query's core words; birth = release of the first app with all of them in its title.
+    """
+    __tablename__ = "suggest_terms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    term: Mapped[str] = mapped_column(String(255))
+    lang: Mapped[str] = mapped_column(String(8))
+    country: Mapped[str] = mapped_column(String(8))
+    first_seen: Mapped[date] = mapped_column(Date, index=True)
+    last_seen: Mapped[date] = mapped_column(Date)
+    days_seen: Mapped[int] = mapped_column(Integer, default=1)
+    baseline: Mapped[bool] = mapped_column(Boolean, default=False)
+    prefix: Mapped[str | None] = mapped_column(String(32))       # shortest prefix that surfaced it
+    prefix_len: Mapped[int | None] = mapped_column(Integer)
+    position: Mapped[int | None] = mapped_column(Integer)
+    first_prefix_len: Mapped[int | None] = mapped_column(Integer)
+    keyword_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("keywords.id", ondelete="SET NULL"))
+    phrase: Mapped[str | None] = mapped_column(String(255))
+    phrase_birth: Mapped[date | None] = mapped_column(Date)
+    phrase_titles: Mapped[int | None] = mapped_column(Integer)
+    phrase_titles_30d: Mapped[int | None] = mapped_column(Integer)
+    leader_app_id: Mapped[str | None] = mapped_column(String(255))
+    # The leading game's installs look bought (paid/mixed traffic) or exploded within weeks of release
+    leader_paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    relevant_top: Mapped[int | None] = mapped_column(Integer)     # top-10 results with the phrase in the title
+    score: Mapped[float | None] = mapped_column(Float, index=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    __table_args__ = (UniqueConstraint("term", "lang", "country"),)
+
+
 class JobRun(Base):
     __tablename__ = "job_runs"
 

@@ -1,6 +1,6 @@
 """Search-demand niches."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import asc, desc, func, select
@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from playtrend.api.deps import Ctx, feature, get_db
 from playtrend.catalog import GENRE_NAMES_RU
-from playtrend.models import App, GameMetrics, Keyword, KeywordRank
+from playtrend.models import App, GameMetrics, Keyword, KeywordRank, SuggestPrefix, SuggestTerm
 from playtrend.pipeline import brand, entry
-from playtrend.pipeline.keyword_markets import MARKETS
+from playtrend.pipeline.keyword_markets import DETECTOR_MARKETS, MARKETS, NEW_QUERY_DAYS, YOUNG_PHRASE_DAYS
 
 router = APIRouter(prefix="/api")
 
@@ -116,3 +116,65 @@ def keyword_detail(keyword_id: int, ctx: Ctx = Depends(feature("keywords")), db:
         } for rank, a, m in rows],
         "related": [kw_payload(r) for r in related],
     }
+
+
+# ----------------------------- new queries -----------------------------
+
+NEW_SORTS = {"score": SuggestTerm.score, "first_seen": SuggestTerm.first_seen, "phrase_birth": SuggestTerm.phrase_birth,
+             "relevant_top": SuggestTerm.relevant_top, "phrase_titles": SuggestTerm.phrase_titles,
+             "term": SuggestTerm.term, "leader_v7": GameMetrics.v7}
+
+
+@router.get("/new-queries")
+def list_new_queries(
+    country: str | None = None, kind: str = "all", hide_paid: bool = True, q: str | None = None,
+    max_relevant: int | None = None, sort: str = "score", dir: str = "desc", page: int = 1,
+    page_size: int = Query(50, le=200),
+    ctx: Ctx = Depends(feature("keywords")), db: Session = Depends(get_db),
+):
+    """Game queries autocomplete started suggesting lately, or whose phrase is only months old."""
+    today = date.today()
+    conds = [SuggestTerm.score > 0]
+    if country:
+        conds.append(SuggestTerm.country == country)
+    if kind == "new":
+        conds += [SuggestTerm.baseline.is_(False), SuggestTerm.first_seen >= today - timedelta(days=NEW_QUERY_DAYS)]
+    elif kind == "young":
+        conds.append(SuggestTerm.phrase_birth >= today - timedelta(days=YOUNG_PHRASE_DAYS))
+    if hide_paid:
+        conds.append(SuggestTerm.leader_paid.is_(False))
+    if q:
+        conds.append(func.lower(SuggestTerm.term).like(f"%{q.lower()}%"))
+    if max_relevant is not None:
+        conds.append(SuggestTerm.relevant_top <= max_relevant)
+    stmt = (select(SuggestTerm, Keyword, App, GameMetrics)
+            .outerjoin(Keyword, Keyword.id == SuggestTerm.keyword_id)
+            .outerjoin(App, App.app_id == SuggestTerm.leader_app_id)
+            .outerjoin(GameMetrics, GameMetrics.app_id == SuggestTerm.leader_app_id)
+            .where(*conds))
+    total = db.scalar(select(func.count()).select_from(select(SuggestTerm.id).where(*conds).subquery()))
+    col = NEW_SORTS.get(sort, SuggestTerm.score)
+    order = desc(col) if dir == "desc" else asc(col)
+    rows = db.execute(stmt.order_by(order.nulls_last(), SuggestTerm.id)
+                      .offset((max(page, 1) - 1) * page_size).limit(page_size)).all()
+    items = []
+    for t, k, a, m in rows:
+        items.append({
+            "id": t.id, "term": t.term, "lang": t.lang, "country": t.country,
+            "first_seen": t.first_seen, "days_seen": t.days_seen, "baseline": t.baseline,
+            "is_new": not t.baseline and (today - t.first_seen).days <= NEW_QUERY_DAYS,
+            "prefix": t.prefix, "rising": bool(t.first_prefix_len and t.prefix_len and t.prefix_len < t.first_prefix_len),
+            "phrase": t.phrase, "phrase_birth": t.phrase_birth,
+            "phrase_age": (today - t.phrase_birth).days if t.phrase_birth else None,
+            "phrase_titles": t.phrase_titles, "phrase_titles_30d": t.phrase_titles_30d,
+            "relevant_top": t.relevant_top, "score": t.score, "leader_paid": t.leader_paid,
+            "keyword": {"id": k.id, "demand": k.demand, "games_share": k.games_share, "room": k.room,
+                        "room_best": k.room_best, "entry_score": k.entry_score} if k else None,
+            "leader": {"app_id": a.app_id, "title": a.title, "icon_url": a.icon_url, "installs": a.real_installs,
+                       "age_days": (today - a.released).days if a.released else None,
+                       "v7": m.v7 if m else None, "traffic": m.traffic if m else None} if a else None,
+        })
+    markets = [{"country": mk.country, "lang": mk.lang} for mk in DETECTOR_MARKETS]
+    started = db.scalar(select(func.min(SuggestPrefix.first_crawled)))
+    return {"total": total, "page": page, "page_size": page_size, "items": items, "markets": markets,
+            "started": started}

@@ -28,6 +28,7 @@ const STEP_LABELS: Record<string, string> = {
   autokeys: "Ключи быстрых молодых игр в очередь",
   cleanup: "Очистка старых данных",
   softlaunch: "Проверка софт-лончей (разово)",
+  newqueries: "Детектор новых запросов",
 };
 // Second pass of a step within one run (enrich/metrics run again after keyword search)
 const REPEAT_LABELS: Record<string, string> = {
@@ -36,7 +37,7 @@ const REPEAT_LABELS: Record<string, string> = {
 };
 const PROGRESS_LABELS: Record<string, string> = {
   charts: "запросов чартов", enrich: "карточек", track: "игр", similar: "игр-образцов", developers: "страниц студий",
-  suggest: "сидов", search: "запросов", "keyword-cards": "карточек из поиска", softlaunch: "игр проверено на софт-лонч",
+  suggest: "сидов", search: "запросов", prefixes: "подсказок", "new-search": "новых запросов", "keyword-cards": "карточек из поиска", softlaunch: "игр проверено на софт-лонч",
 };
 
 // ---------- time helpers (server stores UTC without "Z") ----------

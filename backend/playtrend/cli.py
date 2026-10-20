@@ -4,7 +4,8 @@
   daily                   run the full daily pipeline once
   run <job> [...]         run single jobs: charts expand enrich track metrics keywords entry cleanup
   keys <app_id>           build the keys report (reverse ASO) of one game now
-  worker                  long-running scheduler (runs `daily` once a day at PLAYTREND_DAILY_HOUR_UTC)
+  worker                  long-running scheduler (runs `daily` once a day at PLAYTREND_DAILY_HOUR_UTC,
+                          the new-queries detector at PLAYTREND_NEW_QUERIES_HOUR_UTC)
   create-user <email> <password> [--superadmin]
   picks-load <file.json> [--workspace Main]   replace a team's "to build" list (see playtrend/picks.py)
   import-legacy <path>    import history from the old SQLite monitor.db
@@ -76,7 +77,7 @@ def cleanup():
 
 
 def jobs():
-    from playtrend.pipeline import app_keys, charts, details, entry, expand, keywords, metrics
+    from playtrend.pipeline import app_keys, charts, details, entry, expand, keywords, metrics, new_queries
     return {
         "charts": charts.run,
         "expand": expand.run,
@@ -88,6 +89,7 @@ def jobs():
         "cleanup": cleanup,
         "softlaunch": details.backfill_soft_launch,
         "autokeys": app_keys.queue_fast_games,
+        "newqueries": new_queries.run,
     }
 
 
@@ -183,7 +185,19 @@ def worker():
             log.info("запуск по кнопке «Запустить сейчас»")
         if requested or (not done_today and now.hour >= cfg.daily_hour_utc):
             daily()
+        elif now.hour >= cfg.new_queries_hour_utc and not ran_today("newqueries", today_start):
+            try:
+                jobs()["newqueries"]()
+            except Exception as e:  # recorded in job_runs; the scheduler keeps going
+                log.warning("детектор новых запросов: %s", e)
         time.sleep(60)
+
+
+def ran_today(job: str, today_start: datetime) -> bool:
+    with session_scope() as s:
+        return s.scalar(select(JobRun.id).where(
+            JobRun.job == job, JobRun.started_at >= today_start,
+            (JobRun.error.is_(None)) | (JobRun.error != INTERRUPTED)).limit(1)) is not None
 
 
 def main(argv=None):

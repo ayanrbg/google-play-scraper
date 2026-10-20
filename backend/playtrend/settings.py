@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     keyword_watch_per_run: int = 60
     keyword_local_watch_per_run: int = 30
     similar_expand_top: int = 100
+    # New-queries detector: autocomplete prefixes typed per market a day, new queries searched,
+    # three-letter word starts of game titles/queries kept per market, and when it runs (UTC hour)
+    new_queries_prefixes_per_market: int = 900
+    new_queries_search_per_market: int = 40
+    new_queries_game_prefixes: int = 700
+    new_queries_hour_utc: int = 12
 
     # Scheduler (UTC hour of the daily pipeline)
     daily_hour_utc: int = 3

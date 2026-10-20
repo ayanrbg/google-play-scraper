@@ -115,3 +115,27 @@ export type Keyword = {
 };
 
 export type Page<T> = { total: number; page: number; page_size: number; items: T[]; limited_to?: number | null };
+
+/** A query Google Play autocomplete started suggesting lately, or whose phrase is only months old (backend pipeline/new_queries.py). */
+export type NewQuery = {
+  id: number;
+  term: string;
+  lang: string;
+  country: string;
+  first_seen: string;
+  days_seen: number;
+  baseline: boolean;   // already there on the first crawl of its prefix: age unknown
+  is_new: boolean;
+  prefix: string | null;
+  rising: boolean;
+  phrase: string | null;
+  phrase_birth: string | null;
+  phrase_age: number | null;
+  phrase_titles: number | null;
+  phrase_titles_30d: number | null;
+  relevant_top: number | null;   // top-10 results that carry the phrase in the title
+  score: number | null;
+  leader_paid: boolean;
+  keyword: { id: number; demand: number; games_share: number | null; room: number | null; room_best: number | null; entry_score: number | null } | null;
+  leader: { app_id: string; title: string | null; icon_url: string | null; installs: number | null; age_days: number | null; v7: number | null; traffic: string | null } | null;
+};

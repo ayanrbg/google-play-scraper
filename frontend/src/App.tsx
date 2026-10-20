@@ -14,6 +14,7 @@ import Studios from "./pages/Studios";
 import Status from "./pages/Status";
 import Settings from "./pages/Settings";
 import Picks from "./pages/Picks";
+import NewQueries from "./pages/NewQueries";
 
 // The site is public: `null` is a guest who can read everything. Signing in adds team features
 // (marks, saved views, settings) and admin tools.
@@ -64,6 +65,7 @@ export default function App() {
           <Route path="/game/:id" element={<GamePage />} />
           <Route path="/niches" element={<Niches />} />
           <Route path="/niches/:id" element={<NichePage />} />
+          <Route path="/new-queries" element={<NewQueries />} />
           <Route path="/genres" element={<Genres />} />
           <Route path="/studios" element={<Studios />} />
           <Route path="/picks" element={user ? <Picks /> : <Navigate to="/login?next=/picks" replace />} />
@@ -129,6 +131,9 @@ function Shell({ children }: { children: React.ReactNode }) {
           <NavLink to="/niches">
             <span className="nav-dot" /> Ниши в поиске
           </NavLink>
+          <NavLink to="/new-queries">
+            <span className="nav-dot" /> Новые запросы
+          </NavLink>
           <NavLink to="/genres">
             <span className="nav-dot" /> Жанры
           </NavLink>
@@ -190,7 +195,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <TabIcon d={<><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>} />
           Студии
         </NavLink>
-        <button className={open || ["/status", "/settings", "/picks"].includes(location.pathname) ? "active" : ""} onClick={() => setOpen(!open)}>
+        <button className={open || ["/status", "/settings", "/picks", "/new-queries"].includes(location.pathname) ? "active" : ""} onClick={() => setOpen(!open)}>
           <TabIcon d={<path d="M4 7h16M4 12h16M4 17h16" />} />
           Ещё
         </button>

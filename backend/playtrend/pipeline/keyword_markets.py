@@ -103,3 +103,23 @@ MARKETS: list[Market] = [
 
 def market(country: str) -> Market | None:
     return next((m for m in MARKETS if m.country == country), None)
+
+
+# New-queries detector (pipeline/new_queries.py): the markets whose autocomplete it reads, and what
+# counts as new. Kept here, away from the network layer, because the web API filters on them too.
+NEW_QUERY_DAYS = 30           # a query first suggested this recently (and not on a baseline crawl) is new
+YOUNG_PHRASE_DAYS = 150       # a phrase whose first game came out this recently is young
+
+
+@dataclass
+class DetectorMarket:
+    lang: str
+    country: str
+    alphabet: list[str]
+
+
+DETECTOR_MARKETS = [
+    DetectorMarket("en", "us", LATIN), DetectorMarket("en", "in", LATIN), DetectorMarket("pt", "br", LATIN),
+    DetectorMarket("es", "mx", LATIN), DetectorMarket("id", "id", LATIN), DetectorMarket("ru", "ru", CYRILLIC),
+    DetectorMarket("tr", "tr", LATIN),
+]
