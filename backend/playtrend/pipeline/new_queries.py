@@ -44,6 +44,10 @@ EXPLOSIVE_DAYS = 60      # a game past 1M installs this young exploded: bought, 
 EXPLOSIVE_INSTALLS = 1_000_000   # is what clones live on, so such leaders are marked, not hidden
 FRESH_TITLE_DAYS = 90    # games this young lend their title words to the word queries
 WAVE_DAYS = 30           # studios that put the phrase in a title this recently make a clone wave
+PHRASE_MAX_AGE = 180     # a title phrase typed into autocomplete was first used this recently...
+PHRASE_MAX_TITLES = 60   # ...and is not a crowd yet: the point is to be early
+BETTING = re.compile(r"\w*bet\w*|casino|kasyno|slots?|pokies|plinko|stake|spins?|jackpot|rummy|patti|poker|"
+                     r"lottery|joker|fortune|tiger|tigrinho|wealth|lucky|aviator|cash|money|earn|jili|bingo", re.I)
 SEED = "новые запросы"
 
 # Words that say nothing about what the game is: left out of the phrase
@@ -168,15 +172,18 @@ class TitleIndex:
         self.by_word: dict[str, set[str]] = defaultdict(set)
         self.recent_titles: list[tuple[str, str]] = []
         rows = s.execute(select(App.app_id, App.title, App.released, App.is_game, App.real_installs,
-                                GameMetrics.v7, GameMetrics.traffic, GameMetrics.brand_flags, App.developer_id)
+                                GameMetrics.v7, GameMetrics.traffic, GameMetrics.brand_flags, App.developer_id,
+                                App.genre_id, GameMetrics.flag_cash)
                          .outerjoin(GameMetrics, GameMetrics.app_id == App.app_id)
                          .where(App.released.is_not(None))).all()
-        for app_id, title, released, is_game, installs, v7, traffic, flags, dev in rows:
+        for app_id, title, released, is_game, installs, v7, traffic, flags, dev, genre, cash in rows:
             self.apps[app_id] = (released, is_game, installs or 0, v7 or 0, traffic, set(flags or []), dev)
             for w in set(words(title)):
                 if len(w) >= 3:
                     self.by_word[w].add(app_id)
-            if is_game and (today - released).days <= FRESH_TITLE_DAYS:
+            # Betting apps dressed as games come in waves of their own brand names: not our kind of idea
+            if (is_game and (today - released).days <= FRESH_TITLE_DAYS and genre != "GAME_CASINO" and not cash
+                    and not BETTING.search(title or "")):
                 self.recent_titles.append((app_id, title))
 
     def matching(self, phrase: tuple[str, ...]) -> set[str]:
@@ -213,18 +220,20 @@ class TitleIndex:
         return sum(1 for i in self.matching(phrase) if (self.today - self.apps[i][0]).days > 365)
 
     def fresh_phrases(self, limit: int) -> list[str]:
-        """Words and word pairs that at least two studios put in titles of games out within FRESH_TITLE_DAYS,
-        while old games hardly used them: a new idea others started copying. Most studios first."""
+        """Words and word pairs that several studios put in titles of games out within FRESH_TITLE_DAYS, first
+        used in a title within PHRASE_MAX_AGE and not yet a crowd: a new idea others started copying.
+        A pair needs two studios, a single word three (lone words are often just a pretty name)."""
         devs: dict[str, set] = defaultdict(set)
         for app_id, title in self.recent_titles:
-            toks = [w for w in words(title) if w not in GENERIC and len(w) >= 3 and not w.isdigit() and w.isascii()]
+            toks = [w for w in words(title) if w not in GENERIC and len(w) >= 3 and w.isascii() and w.isalpha()]
             for g in set(toks) | {f"{a} {b}" for a, b in zip(toks, toks[1:]) if a != b}:
                 devs[g].add(self.apps[app_id][6] or app_id)
         out = []
         for g, ds in devs.items():
-            if len(ds) < 2 or len(g) > 60:
+            if len(ds) < (2 if " " in g else 3) or len(g) > 60 or BETTING.search(g):
                 continue
-            if self.old_titles(tuple(g.split())) > (2 if " " in g else 5):
+            ids = self.matching(tuple(g.split()))
+            if len(ids) > PHRASE_MAX_TITLES or (self.today - min(self.apps[i][0] for i in ids)).days > PHRASE_MAX_AGE:
                 continue
             out.append((-len(ds), " " not in g, g))     # pairs before single words with as many studios
         return [g for *_, g in sorted(out)[:limit]]
