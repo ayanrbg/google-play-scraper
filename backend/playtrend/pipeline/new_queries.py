@@ -46,8 +46,10 @@ FRESH_TITLE_DAYS = 90    # games this young lend their title words to the word q
 WAVE_DAYS = 30           # studios that put the phrase in a title this recently make a clone wave
 PHRASE_MAX_AGE = 180     # a title phrase typed into autocomplete was first used this recently...
 PHRASE_MAX_TITLES = 60   # ...and is not a crowd yet: the point is to be early
-BETTING = re.compile(r"\w*bet\w*|casino|kasyno|slots?|pokies|plinko|stake|spins?|jackpot|rummy|patti|poker|"
-                     r"lottery|joker|fortune|tiger|tigrinho|wealth|lucky|aviator|cash|money|earn|jili|bingo", re.I)
+# Bookmaker brands (1xbet, goldbet, betano), casino words, and site-like names (81cc, 777): not "alphabet"
+BETTING = re.compile(r"\b(?!alpha)\w*bet\b|\bbet(s|ting|ano|way)?\b|\b(casino|kasyno|slots?|pokies|plinko|stake|spins?|"
+                     r"jackpot|rummy|patti|poker|lottery|joker|fortune|tigrinho|wealth|aviator|cash|money|earn|jili|"
+                     r"bingo|777)\b|\b\d{2,}[a-z]{2,}\b", re.I)
 SEED = "новые запросы"
 
 # Words that say nothing about what the game is: left out of the phrase
@@ -244,7 +246,7 @@ def score(t: SuggestTerm, k: Keyword | None, leader_v7: float, today: date) -> f
     search, and that a growing game already proves. None until the query is searched."""
     if k is None or k.analyzed_at is None or k.games_share is None:
         return None
-    if k.games_share < 0.5:
+    if k.games_share < 0.5 or BETTING.search(t.term):     # casino "games" count as games: not ours
         return 0.0
     if not t.baseline and (today - t.first_seen).days <= NEW_DAYS:
         fresh = 1.0
@@ -286,7 +288,7 @@ def analyze(mk: DMarket, index: TitleIndex, budget: int, today: date) -> dict:
         young = today - timedelta(days=YOUNG_PHRASE_DAYS)
 
         def wanted(t):
-            if t.checked_at and t.checked_at >= stale:
+            if (t.checked_at and t.checked_at >= stale) or BETTING.search(t.term):
                 return None
             if not t.baseline and (today - t.first_seen).days <= NEW_DAYS:
                 return (0, -t.first_seen.toordinal())

@@ -170,3 +170,19 @@ def test_run_types_fresh_title_phrases(monkeypatch):
         t = s.scalar(select(SuggestTerm).where(SuggestTerm.term == "bomb chip challenge"))
         assert t.prefix == "bomb chip " and t.phrase == "bomb chip" and t.phrase_titles == 2
         assert s.get(SuggestPrefix, ("bomb chip ", "en", "us")).kind == "word"
+
+
+def test_betting_is_not_a_game_idea():
+    for t in ("81cc play", "1xbet", "goldbet app", "rummy circle", "fortune tiger", "dream slot 777 online",
+              "holland casino nl", "betano"):
+        assert new_queries.BETTING.search(t), t
+    for t in ("alphabet lore", "bomb chip challenge", "3d tower", "4x4 offroad", "lucky scoop", "steal an egg"):
+        assert not new_queries.BETTING.search(t), t
+    k = Keyword(term="x", demand=70, games_share=1.0, analyzed_at=datetime.utcnow())
+    assert new_queries.score(SuggestTerm(term="81cc play", first_seen=TODAY, baseline=False, relevant_top=0), k, 0, TODAY) == 0
+    add_app("b1", "777WZ Slots Game", 20, dev="x1")
+    add_app("b2", "777WZ Party", 15, dev="x2")
+    add_app("b3", "Goldbet Royal", 10, dev="x3")
+    add_app("b4", "Goldbet Arena", 12, dev="x4")
+    with session_scope() as s:
+        assert TitleIndex(s, TODAY).fresh_phrases(50) == []
