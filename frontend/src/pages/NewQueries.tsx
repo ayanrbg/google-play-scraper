@@ -12,7 +12,7 @@ const SORTS: [string, string, string][] = [
 ];
 
 const DEFAULTS: Record<string, string> = {
-  country: "", kind: "all", hide_paid: "true", q: "", max_relevant: "", sort: "score", dir: "desc", page: "1",
+  country: "", kind: "all", hide_paid: "false", q: "", max_relevant: "", sort: "score", dir: "desc", page: "1",
 };
 
 type Data = Page<NewQuery> & { markets: { country: string; lang: string }[]; started: string | null };
@@ -77,7 +77,7 @@ export default function NewQueries() {
                  value={f.get("kind")} onChange={(v) => f.set({ kind: v })} />
           </FGroup>
           <FGroup title="Лидер на закупке" hint="признаки закупки, а в поиске и чартах почти не виден; взрывной старт только помечается">
-            <Seg options={[["true", "Скрыть"], ["false", "Показать"]]} value={f.get("hide_paid")} onChange={(v) => f.set({ hide_paid: v })} />
+            <Seg options={[["false", "Показывать"], ["true", "Скрыть"]]} value={f.get("hide_paid")} onChange={(v) => f.set({ hide_paid: v })} />
           </FGroup>
           <FGroup title="Игр с фразой в топ-10 выдачи" hint="меньше — свободнее">
             <Chips options={[["0", "0"], ["1", "≤ 1"], ["3", "≤ 3"]]} value={f.get("max_relevant")} onChange={(v) => f.set({ max_relevant: v })} />

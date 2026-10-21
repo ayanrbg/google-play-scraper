@@ -99,7 +99,7 @@ def test_score_wants_a_new_game_query_with_a_gap():
     assert new_queries.score(new, Keyword(term="x", demand=70), 0, TODAY) is None
 
 
-def test_new_queries_api_filters_paid_leaders():
+def test_new_queries_api_can_hide_paid_leaders():
     add_app("lead.ok", "Egg Speed Escape", 30, v7=20_000)
     add_app("lead.ads", "Meme Mix Party", 30, installs=5_000_000, v7=300_000, traffic="mixed")
     with session_scope() as s:
@@ -113,7 +113,8 @@ def test_new_queries_api_filters_paid_leaders():
                               baseline=False, keyword_id=k.id, leader_app_id=leader, leader_paid=paid,
                               phrase=term, relevant_top=1, score=50))
     c = TestClient(app)
-    r = c.get("/api/new-queries").json()
+    assert c.get("/api/new-queries").json()["total"] == 2      # nothing hidden unless asked: not to miss anything
+    r = c.get("/api/new-queries", params={"hide_paid": "true"}).json()
     assert [i["term"] for i in r["items"]] == ["egg speed"]
     item = r["items"][0]
     assert item["is_new"] and item["leader"]["app_id"] == "lead.ok" and item["keyword"]["room"] == 8

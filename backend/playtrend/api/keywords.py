@@ -127,7 +127,7 @@ NEW_SORTS = {"score": SuggestTerm.score, "first_seen": SuggestTerm.first_seen, "
 
 @router.get("/new-queries")
 def list_new_queries(
-    country: str | None = None, kind: str = "all", hide_paid: bool = True, q: str | None = None,
+    country: str | None = None, kind: str = "all", hide_paid: bool = False, q: str | None = None,
     max_relevant: int | None = None, sort: str = "score", dir: str = "desc", page: int = 1,
     page_size: int = Query(50, le=200),
     ctx: Ctx = Depends(feature("keywords")), db: Session = Depends(get_db),
