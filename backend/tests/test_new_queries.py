@@ -40,9 +40,9 @@ def test_only_queries_shown_by_an_already_crawled_prefix_are_new():
         assert egg.first_prefix_len == 4 and egg.baseline
 
 
-def add_app(app_id, title, age, installs=10_000, v7=0, traffic="organic", is_game=True, dev=None):
+def add_app(app_id, title, age, installs=10_000, v7=0, traffic="organic", is_game=True, dev=None, ads=True):
     with session_scope() as s:
-        s.add(App(app_id=app_id, title=title, released=TODAY - timedelta(days=age), is_game=is_game,
+        s.add(App(app_id=app_id, title=title, released=TODAY - timedelta(days=age), is_game=is_game, contains_ads=ads,
                   real_installs=installs, details_at=datetime.utcnow(), status="active", developer_id=dev or app_id))
         s.add(GameMetrics(app_id=app_id, v7=v7, traffic=traffic, brand_flags=[]))
 
@@ -186,3 +186,14 @@ def test_betting_is_not_a_game_idea():
     add_app("b4", "Goldbet Arena", 12, dev="x4")
     with session_scope() as s:
         assert TitleIndex(s, TODAY).fresh_phrases(50) == []
+
+
+def test_shell_apps_without_ads_or_purchases_lend_no_title_phrases():
+    """Betting shells (AAAMXSimons, AAAMX Sort...) carry no ads and no purchases: they earn elsewhere."""
+    for i in range(4):
+        add_app(f"shell{i}", f"AAAMX Throne {i}", 10 + i, installs=50, dev=f"shell{i}", ads=False)
+    add_app("w1", "Bomb Chip Challenge", 30, dev="a")
+    add_app("w2", "Bomb Chip Party", 20, dev="b")
+    with session_scope() as s:
+        phrases = TitleIndex(s, TODAY).fresh_phrases(50)
+    assert "bomb chip" in phrases and not any("aaamx" in p or "throne" in p for p in phrases)

@@ -175,17 +175,19 @@ class TitleIndex:
         self.recent_titles: list[tuple[str, str]] = []
         rows = s.execute(select(App.app_id, App.title, App.released, App.is_game, App.real_installs,
                                 GameMetrics.v7, GameMetrics.traffic, GameMetrics.brand_flags, App.developer_id,
-                                App.genre_id, GameMetrics.flag_cash)
+                                App.genre_id, GameMetrics.flag_cash, App.contains_ads, App.offers_iap)
                          .outerjoin(GameMetrics, GameMetrics.app_id == App.app_id)
                          .where(App.released.is_not(None))).all()
-        for app_id, title, released, is_game, installs, v7, traffic, flags, dev, genre, cash in rows:
+        for app_id, title, released, is_game, installs, v7, traffic, flags, dev, genre, cash, ads, iap in rows:
             self.apps[app_id] = (released, is_game, installs or 0, v7 or 0, traffic, set(flags or []), dev)
             for w in set(words(title)):
                 if len(w) >= 3:
                     self.by_word[w].add(app_id)
-            # Betting apps dressed as games come in waves of their own brand names: not our kind of idea
-            if (is_game and (today - released).days <= FRESH_TITLE_DAYS and genre != "GAME_CASINO" and not cash
-                    and not BETTING.search(title or "")):
+            # Betting apps dressed as games come in waves of their own brand names (AAAMXSimons, RKKKRidge,
+            # NN666Copper): casino genre, cash flag or words - or no ads and no purchases, since they earn elsewhere.
+            # Every game of a real wave (Bomb Chip, Steal an Egg, Mystery Dumpling) shows ads.
+            if (is_game and (ads or iap) and (today - released).days <= FRESH_TITLE_DAYS and genre != "GAME_CASINO"
+                    and not cash and not BETTING.search(title or "")):
                 self.recent_titles.append((app_id, title))
 
     def matching(self, phrase: tuple[str, ...]) -> set[str]:
