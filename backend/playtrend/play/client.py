@@ -226,9 +226,29 @@ def parse_search(dom: str, n_hits: int) -> list[dict]:
         return []
     results = ([{k: spec.extract_content(top_result) for k, spec in ElementSpecs.SearchResultOnTop.items()}]
                if top_result else [])
+    # The big card Google puts on top for an exact title no longer carries the app id where the library
+    # looks (it came back None, so the #1 result was dropped); it is in the card's store links.
+    if results and not results[0].get("appId"):
+        results[0]["appId"] = _linked_app_id(top_result)
     for i in range(min(len(apps), n_hits) - len(results)):
         results.append({k: spec.extract_content(apps[i]) for k, spec in ElementSpecs.SearchResult.items()})
     return results
+
+
+DETAILS_ID = re.compile(r"details\?id=([\w.]+)")
+
+
+def _linked_app_id(node) -> str | None:
+    """First app id in a store link ("…/details?id=com.x.y") anywhere inside a nested JSON node."""
+    if isinstance(node, str):
+        m = DETAILS_ID.search(node)
+        return m.group(1) if m else None
+    if isinstance(node, list):
+        for x in node:
+            found = _linked_app_id(x)
+            if found:
+                return found
+    return None
 
 
 def _parse_installs(text) -> int | None:
