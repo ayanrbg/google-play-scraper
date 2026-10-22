@@ -135,6 +135,7 @@ export type NewQuery = {
   phrase_titles_30d: number | null;
   phrase_devs_30d: number | null;   // studios that put the phrase in a title within 30 days (a clone wave)
   relevant_top: number | null;   // top-10 results that carry the phrase in the title
+  name_taken: boolean;   // #1 is a big game with the phrase in its title: the query is its name
   score: number | null;
   leader_paid: boolean;        // bought and nothing else: hidden by default
   leader_explosive: boolean;   // 1M+ installs within two months: bought or viral, only marked

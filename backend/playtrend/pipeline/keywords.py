@@ -12,7 +12,7 @@ import string
 from datetime import date, datetime, timedelta
 from statistics import median
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from playtrend.db import session_scope, upsert
 from playtrend.models import App, GameMetrics, Keyword, KeywordRank, KeywordSerp, SeedState
@@ -286,6 +286,46 @@ def backfill_games_share() -> int:
                     "competition": k.competition, "young_share": k.young_share or 0,
                     "young_best_installs": k.young_best_installs or 0, "games_share": k.games_share})
         return len(by_kw)
+
+
+RESEARCH_CHUNK = 300
+
+
+def research_lost_first() -> dict:
+    """One-off: search again the keywords whose stored results start at #2. Until 2026-10-22 the big
+    card Google puts on top for an exact title was dropped (its app id moved), so these lost their #1."""
+    with job_run("research") as stats:
+        with session_scope() as s:
+            lost = s.execute(select(Keyword.id, Keyword.term, Keyword.lang, Keyword.country)
+                             .join(KeywordRank, KeywordRank.keyword_id == Keyword.id)
+                             .group_by(Keyword.id).having(func.min(KeywordRank.rank) == 2)).all()
+        stats["keywords"] = len(lost)
+        by_market: dict[tuple[str, str], list] = {}
+        for kw_id, term, lang, country in lost:
+            by_market.setdefault((lang, country), []).append((kw_id, term))
+        today = date.today()
+        done = 0
+        for (lang, country), kws in by_market.items():
+            for i in range(0, len(kws), RESEARCH_CHUNK):
+                chunk = dict(kws[i:i + RESEARCH_CHUNK])
+                results: dict[int, list[dict]] = {}
+                for kw_id, res, err in parallel(lambda k: client.search(chunk[k], lang, country, 20), list(chunk),
+                                                workers=2, label="search"):
+                    if not err:
+                        results[kw_id] = res
+                if not results:
+                    continue
+                top_ids = add_result_stubs(results, chunk, lang, country)
+                with session_scope() as s:
+                    missing = s.scalars(select(App.app_id).where(App.app_id.in_(top_ids), App.details_at.is_(None))).all()
+                if missing:
+                    refresh(list(missing), "keyword-cards", set_tracked=True)
+                with session_scope() as s:
+                    save_search_results(s, results, today)
+                done += len(results)
+                stats["searched"] = done
+        log.info("перепроверено ключей без №1: %d из %d", done, len(lost))
+    return stats
 
 
 def run():

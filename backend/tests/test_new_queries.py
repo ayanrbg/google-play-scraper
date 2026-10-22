@@ -16,7 +16,7 @@ US = DMarket("en", "us", LATIN)
 
 def test_phrase_leaves_out_words_that_say_nothing():
     assert phrase_of("boom chip challenge 2 player game") == ("boom", "chip")
-    assert phrase_of("jogo de imitar memes") == ("imitar", "memes")
+    assert phrase_of("jogo de imitar memes") == ("imitar", "meme")     # plural "s" dropped: "meme" and "memes" match
     assert phrase_of("offline games") == ()
 
 
@@ -198,3 +198,38 @@ def test_shell_apps_without_ads_or_purchases_lend_no_title_phrases():
     with session_scope() as s:
         phrases = TitleIndex(s, TODAY).fresh_phrases(50)
     assert "bomb chip" in phrases and not any("aaamx" in p or "throne" in p for p in phrases)
+
+
+def test_plurals_are_one_phrase():
+    """"egg pet" looked young only because old games say "Egg pets": now they count."""
+    assert phrase_of("egg pets games") == phrase_of("egg pet") == ("egg", "pet")
+    add_app("old.pets", "Merge Fluffy Animals: Egg pets", 2500, dev="old")
+    add_app("new.pet", "Ride A Pet: Steal Animal Egg", 30, dev="new")
+    with session_scope() as s:
+        st = TitleIndex(s, TODAY).stats(phrase_of("egg pet"))
+    assert st["phrase_birth"] == TODAY - timedelta(days=2500) and st["phrase_titles"] == 2
+
+
+def test_fresh_phrases_type_the_spelling_titles_use():
+    add_app("c1", "Bomb Chips Duel", 20, dev="a")
+    add_app("c2", "Bomb Chips Party", 15, dev="b")
+    add_app("c3", "Bomb Chip Arena", 10, dev="c")
+    with session_scope() as s:
+        phrases = TitleIndex(s, TODAY).fresh_phrases(20)
+    assert "bomb chips" in phrases and "bomb chip" not in phrases     # one phrase, as most titles spell it
+
+
+def test_a_query_that_is_a_big_hits_name_scores_low():
+    add_app("royal.hit", "Royal Smash! - Physics Puzzle", 120, installs=12_000_000, v7=120_000)
+    add_app("royal.clone", "Royal Smash", 30, installs=5_000)
+    with session_scope() as s:
+        index = TitleIndex(s, TODAY)
+    titles = {"royal.hit": "Royal Smash! - Physics Puzzle", "royal.clone": "Royal Smash"}
+    assert new_queries.name_taken(["royal.hit", "royal.clone"], ("royal", "smash"), titles, index)
+    assert not new_queries.name_taken(["royal.clone", "royal.hit"], ("royal", "smash"), titles, index)
+    k = Keyword(term="royal smash", demand=62, games_share=1.0, analyzed_at=datetime.utcnow())
+    base = dict(term="royal smash", first_seen=TODAY, baseline=True, phrase_birth=TODAY - timedelta(days=100),
+                relevant_top=2, phrase_devs_30d=3)
+    free = new_queries.score(SuggestTerm(**base, name_taken=False), k, 120_000, TODAY)
+    taken = new_queries.score(SuggestTerm(**base, name_taken=True), k, 120_000, TODAY)
+    assert taken < free / 2

@@ -46,6 +46,7 @@ FRESH_TITLE_DAYS = 90    # games this young lend their title words to the word q
 WAVE_DAYS = 30           # studios that put the phrase in a title this recently make a clone wave
 PHRASE_MAX_AGE = 180     # a title phrase typed into autocomplete was first used this recently...
 PHRASE_MAX_TITLES = 60   # ...and is not a crowd yet: the point is to be early
+TAKEN_INSTALLS = 1_000_000   # a #1 game this big with the phrase in its title owns the query
 # Bookmaker brands (1xbet, goldbet, betano), casino words, and site-like names (81cc, 777): not "alphabet"
 BETTING = re.compile(r"\b(?!alpha)\w*bet\b|\bbet(s|ting|ano|way)?\b|\b(casino|kasyno|slots?|pokies|plinko|stake|spins?|"
                      r"jackpot|rummy|patti|poker|lottery|joker|fortune|tigrinho|wealth|aviator|cash|money|earn|jili|"
@@ -65,9 +66,20 @@ def words(text: str | None) -> list[str]:
     return re.findall(r"\w+", (text or "").lower())
 
 
+def stem(word: str) -> str:
+    """A word without its plural "s", so "egg pets" and "egg pet" are one phrase. Only for matching:
+    "bonus" becomes "bonu" on both sides alike; what is typed into autocomplete keeps the real word."""
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
+
+
+def stems(text: str | None) -> list[str]:
+    return [stem(w) for w in words(text)]
+
+
 def phrase_of(term: str) -> tuple[str, ...]:
     """Core words of a query: what it is about, without "game", "offline", "2 player" and the like."""
-    return tuple(sorted({w for w in words(term) if w not in GENERIC and len(w) >= 3 and not w.isdigit()}))
+    return tuple(sorted({stem(w) for w in words(term)
+                         if w not in GENERIC and stem(w) not in GENERIC and len(w) >= 3 and not w.isdigit()}))
 
 
 # ----------------------------- prefixes -----------------------------
@@ -180,7 +192,7 @@ class TitleIndex:
                          .where(App.released.is_not(None))).all()
         for app_id, title, released, is_game, installs, v7, traffic, flags, dev, genre, cash, ads, iap in rows:
             self.apps[app_id] = (released, is_game, installs or 0, v7 or 0, traffic, set(flags or []), dev)
-            for w in set(words(title)):
+            for w in set(stems(title)):
                 if len(w) >= 3:
                     self.by_word[w].add(app_id)
             # Betting apps dressed as games come in waves of their own brand names (AAAMXSimons, RKKKRidge,
@@ -227,19 +239,24 @@ class TitleIndex:
         """Words and word pairs that several studios put in titles of games out within FRESH_TITLE_DAYS, first
         used in a title within PHRASE_MAX_AGE and not yet a crowd: a new idea others started copying.
         A pair needs two studios, a single word three (lone words are often just a pretty name)."""
-        devs: dict[str, set] = defaultdict(set)
+        devs: dict[tuple, set] = defaultdict(set)
+        spelled: dict[tuple, Counter] = defaultdict(Counter)    # "chip"/"chips" are one phrase, typed as titles spell it
         for app_id, title in self.recent_titles:
             toks = [w for w in words(title) if w not in GENERIC and len(w) >= 3 and w.isascii() and w.isalpha()]
-            for g in set(toks) | {f"{a} {b}" for a, b in zip(toks, toks[1:]) if a != b}:
-                devs[g].add(self.apps[app_id][6] or app_id)
+            grams = {(a,) for a in toks} | {(a, b) for a, b in zip(toks, toks[1:]) if stem(a) != stem(b)}
+            for g in grams:
+                key = tuple(stem(w) for w in g)
+                devs[key].add(self.apps[app_id][6] or app_id)
+                spelled[key][" ".join(g)] += 1
         out = []
-        for g, ds in devs.items():
-            if len(ds) < (2 if " " in g else 3) or len(g) > 60 or BETTING.search(g):
+        for key, ds in devs.items():
+            g = spelled[key].most_common(1)[0][0]
+            if len(ds) < (2 if len(key) > 1 else 3) or len(g) > 60 or BETTING.search(g):
                 continue
-            ids = self.matching(tuple(g.split()))
+            ids = self.matching(key)
             if len(ids) > PHRASE_MAX_TITLES or (self.today - min(self.apps[i][0] for i in ids)).days > PHRASE_MAX_AGE:
                 continue
-            out.append((-len(ds), " " not in g, g))     # pairs before single words with as many studios
+            out.append((-len(ds), len(key) == 1, g))     # pairs before single words with as many studios
         return [g for *_, g in sorted(out)[:limit]]
 
 
@@ -259,6 +276,8 @@ def score(t: SuggestTerm, k: Keyword | None, leader_v7: float, today: date) -> f
         fresh = 0.4
     rel = t.relevant_top if t.relevant_top is not None else 10
     gap = 1.0 if rel <= 1 else 0.75 if rel <= 3 else 0.45 if rel <= 5 else 0.2
+    if t.name_taken:      # the query is a big game's name and it holds #1
+        gap = min(gap, 0.25)
     demand = min(1.0, (k.demand or 0) / 80)
     proof = 0.4 + 0.6 * min(1.0, math.log10(leader_v7 + 1) / 5) if leader_v7 else 0.4
     # Several studios copying the idea within a month is proof too, before anyone has grown on it
@@ -272,7 +291,15 @@ def score(t: SuggestTerm, k: Keyword | None, leader_v7: float, today: date) -> f
 def relevant_count(top: list[str], phrase: tuple[str, ...], titles: dict[str, str]) -> int | None:
     if not phrase:
         return None
-    return sum(1 for a in top[:10] if set(phrase) <= set(words(titles.get(a))))
+    return sum(1 for a in top[:10] if set(phrase) <= set(stems(titles.get(a))))
+
+
+def name_taken(top: list[str], phrase: tuple[str, ...], titles: dict[str, str], index: "TitleIndex") -> bool:
+    """The #1 result is a big game with the phrase in its title: people search for it by name, and
+    clones under its name get nothing ("royal smash": the clone at #2 makes a few installs a day)."""
+    if not top or not phrase or top[0] not in titles or top[0] not in index.apps:
+        return False
+    return set(phrase) <= set(stems(titles[top[0]])) and index.apps[top[0]][2] >= TAKEN_INSTALLS
 
 
 def analyze(mk: DMarket, index: TitleIndex, budget: int, today: date) -> dict:
@@ -341,6 +368,7 @@ def analyze(mk: DMarket, index: TitleIndex, budget: int, today: date) -> dict:
             if k is None or not k.analyzed_at:
                 continue
             t.relevant_top = relevant_count(k.top_apps or [], phrase_of(t.term), titles)
+            t.name_taken = name_taken(k.top_apps or [], phrase_of(t.term), titles, index)
             leader_v7 = index.apps[t.leader_app_id][3] if t.leader_app_id in index.apps else 0
             t.score = score(t, k, leader_v7, today)
             if t.id in ids:

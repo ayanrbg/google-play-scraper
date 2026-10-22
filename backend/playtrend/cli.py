@@ -90,6 +90,7 @@ def jobs():
         "softlaunch": details.backfill_soft_launch,
         "autokeys": app_keys.queue_fast_games,
         "newqueries": new_queries.run,
+        "research": keywords.research_lost_first,
     }
 
 

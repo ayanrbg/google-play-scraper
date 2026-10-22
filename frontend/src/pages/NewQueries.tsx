@@ -160,7 +160,10 @@ export default function NewQueries() {
                           </span>
                         ) : null}
                       </td>
-                      <td className={`r num ${(n.relevant_top ?? 10) <= 1 ? "good" : ""}`}>{n.relevant_top ?? "—"}/10</td>
+                      <td className={`r num ${(n.relevant_top ?? 10) <= 1 && !n.name_taken ? "good" : ""}`}>
+                        {n.relevant_top ?? "—"}/10
+                        {n.name_taken && <div className="faint" style={{ fontSize: 12 }} title="На 1-м месте большая игра (1 млн+) с этой фразой в названии: запрос — её имя, клонам под ним мало что достаётся">занято лидером</div>}
+                      </td>
                       <td className="r num">{n.keyword ? roomText(n.keyword) : "—"}</td>
                       <td onClick={(e) => e.stopPropagation()}>{n.leader ? <LeaderCell n={n} /> : <span className="muted">игр с фразой нет</span>}</td>
                     </tr>

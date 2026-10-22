@@ -335,6 +335,8 @@ class SuggestTerm(Base):
     # It passed 1M installs within two months: bought or viral; only marked, viral demand is what clones live on
     leader_explosive: Mapped[bool] = mapped_column(Boolean, default=False)
     relevant_top: Mapped[int | None] = mapped_column(Integer)     # top-10 results with the phrase in the title
+    # #1 is a big game (1M+) with the phrase in its title: the query is its name, clones under it get little
+    name_taken: Mapped[bool] = mapped_column(Boolean, default=False)
     score: Mapped[float | None] = mapped_column(Float, index=True)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime)
 

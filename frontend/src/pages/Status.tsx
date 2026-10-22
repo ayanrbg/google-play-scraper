@@ -29,6 +29,7 @@ const STEP_LABELS: Record<string, string> = {
   cleanup: "Очистка старых данных",
   softlaunch: "Проверка софт-лончей (разово)",
   newqueries: "Детектор новых запросов",
+  research: "Перепроверка ключей без №1 (разово)",
 };
 // Second pass of a step within one run (enrich/metrics run again after keyword search)
 const REPEAT_LABELS: Record<string, string> = {
